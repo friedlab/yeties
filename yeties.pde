@@ -1,7 +1,10 @@
 /* --------------------------------------------------------------------------
 * Yeties - A funky kinect snowball fight game 
 * --------------------------------------------------------------------------
-* prog:  Matthias Wölfel and others (need to be added)
+* prog:  Matthias Wölfel,
+*        Elke Müller,
+*        Jan Felix Reuter
+*        and others (need_to_be_added)
 * date:  04/12/2011 (m/d/y)
 * ver:   0.1
 * ----------------------------------------------------------------------------
@@ -26,7 +29,15 @@ NetAddress myRemoteLocation;
 OscBundle myBundle;
 OscMessage myMessage;
 
+boolean showDebugUI = false;
+//TODO: more than 2 players
+int PLAYER_COUNT = 4;
+PVector[] PLAYER_COLORS = new PVector[PLAYER_COUNT];
+
 int displayCost = 1;
+
+int spielerzahl = 3;
+int modus = 3;
 
 int N = 25;
 int M = 2*N;
@@ -35,7 +46,14 @@ int counter = 0;
 int counter2 = 0;
 int counterEvent = 0;
 
-int person = 0;
+int person = 0; // current person
+
+PVector playerNecks[] = new PVector[4];
+PVector playerActualHands[] = new PVector[4];
+PVector playerOldHands[] = new PVector[4];
+
+PImage[][] playas = new PImage[spielerzahl][modus];
+PImage bg;
 
 // Relative Array of objects
 Pose[][] grid;
@@ -55,16 +73,86 @@ boolean updateDisplay = true;
 
 int steps[] = new int[10];
 float speed[] = new float[10];
-float cost[][] = new float[2][10];
-float costLast[][] = new float[2][10];
+//TODO: more than 2 players
+float cost[][] = new float[PLAYER_COUNT][10]; //TODO: more than 2 players
+float costLast[][] = new float[PLAYER_COUNT][10]; //TODO: more than 2 players
 boolean empty[] = new boolean[10];
 
 Data data;
 RingBuffer[] ringbuffer;
 
-int warning[] = new int[2];
+// ==== COPY ===
+// LHA
+// help variables
+
+// ring buffer for hand pose, which contains only the left hand and right hand in the absolute coordinates
+RingBufferForThrowAction[] ringbufferHand;
+
+// the actual hand pose
+HandPoseAbsolute actualHandPose = new HandPoseAbsolute();
+
+// the old hand pose ( 10 poses before)
+HandPoseAbsolute oldHandPose = new HandPoseAbsolute();
+
+// latenz
+int X = 10;
+// ==== COPY ===
+
+int warning[] = new int[PLAYER_COUNT];
 
 // define the pose object
+
+// @author: LHA
+// a Pose contains many points
+// in this case only 6 points are relevant
+
+float kinectHeight = 0.5f;
+float kinectDistance = 0.2f;
+float otherKinectHeight = 0.5f;
+float otherKinectDistance = 0.2f;
+float cameraDistance = 2f;
+float cameraHeight = 1.4f;
+
+PMatrix3D kinectScale = new PMatrix3D(0.001f, 0, 0, 0,
+                                        0,      0.001f, 0, 0,
+                                        0,      0, 0.001f, 0,
+                                        0, 0,0,1);
+                                        
+PMatrix3D kinectToField = new PMatrix3D(1, 0, 0, 0,
+                                        0, 1, 0, kinectHeight,
+                                        0, 0, 1, kinectDistance,
+                                        0, 0, 0, 1);
+                                        
+
+PMatrix3D kinectToFieldScaled = new PMatrix3D();
+
+
+PMatrix3D otherKinectToFieldRotate = new PMatrix3D(-1, 0, 0, 0,
+                                                   0, 1, 0, 0,
+                                                   0, 0, -1, 0,
+                                                   0, 0, 0, 1);
+                                                  
+PMatrix3D otherKinectToFieldTranslate = new PMatrix3D(1, 0, 0, 0,
+                                                      0, 1, 0, otherKinectHeight,
+                                                      0, 0, 1, -otherKinectDistance,
+                                                      0, 0, 0, 1);
+                                                      
+PMatrix3D otherKinectToFieldScaled = new PMatrix3D();
+
+PMatrix3D fieldToCameraRotation = new PMatrix3D(1, 0, 0, 0,
+                                                 0, -1, 0, 0,
+                                                 0, 0, 1, 0,
+                                                 0, 0, 0, 1);
+                                                 
+PMatrix3D fieldToCameraTranslation = new PMatrix3D(1, 0, 0, 0,
+                                                   0, 1, 0, cameraHeight,
+                                                   0, 0, 1, -cameraDistance,
+                                                   0, 0, 0, 1);
+
+boolean ballThrow = false;
+PVector throwStartPos;
+PVector throwEndPos;
+
 class Pose
 {
     PVector jointLeftShoulderRelative = new PVector();
@@ -76,7 +164,74 @@ class Pose
     PVector jointRightHandRelative = new PVector();
 }
 
+// ==== COPY ===
+// @author: LHA
+// a hand pose class contains only 2 points: the left hand and the right hand 
+// with absolute coordinates
+class HandPoseAbsolute{
+    PVector leftHandAbsolute = new PVector();
+    PVector rightHandAbsolute = new PVector();
+}
+// ==== COPY ===
+
+// ==== COPY ===
+// @author: LHA
+// a new class, used to store multiple poses in a ringbuffer data structure
+class RingBufferForThrowAction{
+  
+  // all hand poses are located here in the ringbuffer data structure
+  HandPoseAbsolute[] poseArray;
+  
+  // the actual pointer of the ring buffer
+  private int actualPointer = 0;
+  
+  // constructor
+  RingBufferForThrowAction(){
+      
+      // init
+      poseArray = new HandPoseAbsolute[M];
+      
+      // init
+      for(int i=0;i<M;i++){
+          poseArray[i] = new HandPoseAbsolute();
+      }
+  }
+  
+  // METHOD
+  
+  // adding a new pose in the ringbuffer
+  void addANewPose(HandPoseAbsolute aNewPose){
+      // calculate the actual pointer
+      actualPointer = (actualPointer+1)%M;
+      
+      // store the new hand pose in the ringbuffer 
+      poseArray[actualPointer].leftHandAbsolute.x = aNewPose.leftHandAbsolute.x;
+      poseArray[actualPointer].leftHandAbsolute.y = aNewPose.leftHandAbsolute.y;
+      poseArray[actualPointer].leftHandAbsolute.z = aNewPose.leftHandAbsolute.z;
+      
+      poseArray[actualPointer].rightHandAbsolute.x = aNewPose.rightHandAbsolute.x;
+      poseArray[actualPointer].rightHandAbsolute.y = aNewPose.rightHandAbsolute.y;
+      poseArray[actualPointer].rightHandAbsolute.z = aNewPose.rightHandAbsolute.z;
+  }
+  
+  // get the actual pointer
+  int getActualPointer(){
+      return actualPointer;
+  }
+  
+  // get the older pose in X poses before
+  HandPoseAbsolute getTheOlderPose(){
+      return poseArray[(getActualPointer()-X+M)%M];
+  }
+}
+// ==== COPY ===
+
+
 // define the pose object
+
+// @author: LHA
+// save pose coordinates in the class RingBuffer
+
 class RingBuffer
 {
     Pose[] poseArray;
@@ -102,6 +257,9 @@ class RingBuffer
         }
     }
  
+   // @author: a new pose will be saved in the ringbuffer
+   // with the ring buffer mechanism
+   // using 1 pointer: startOfBuffer. This pointer means where one should write a new pose in the ring
     void fillBuffer(Pose newPose) {
         startOfBuffer = (startOfBuffer + 1) % M;
         counter++;
@@ -162,14 +320,14 @@ class RingBuffer
         }
     }  
   
-	float cost(int moveID, int j, int i) 
+    float cost(int moveID, int j, int i) 
     {
         // part to adjust between left and right arm
-	// left arm only set value to -1.0
-	// right arm only set value to 1.0
-	// both ams equally set value to 0.0
-	// give more weight to the right arm you could use anysthing between 0.0 and 1.0
-	// give more weight to the left arm you could use anysthing between -1.0 and 0.0
+		// left arm only set value to -1.0
+		// right arm only set value to 1.0
+		// both ams equally set value to 0.0
+		// give more weight to the right arm you could use anysthing between 0.0 and 1.0
+		// give more weight to the left arm you could use anysthing between -1.0 and 0.0
 		
 	float weight_left_or_right = 0.0;
 	
@@ -483,7 +641,7 @@ Pose normalizePose(Pose p) {
     rightUpperArmVector.y = p.jointRightElbowRelative.y - p.jointRightShoulderRelative.y;
     rightUpperArmVector.z = p.jointRightElbowRelative.z - p.jointRightShoulderRelative.z;
     
-        
+      
 //    println("left upper arm length: " + leftUpperArmVector.mag());
 //    println("right upper arm length: " + rightUpperArmVector.mag());
  
@@ -545,6 +703,7 @@ Pose normalizePose(Pose p) {
     return p;
 }
 
+PImage snowball;
 
 /* =====================================================================================
     setup
@@ -554,7 +713,7 @@ void setup()
     // context = new SimpleOpenNI(this);
     context = new SimpleOpenNI(this,SimpleOpenNI.RUN_MODE_MULTI_THREADED);
   
-    int portToListenTo = 7001; 
+    int portToListenTo = 7000; 
     int portToSendTo = 7000;
     String ipAddressToSendTo = "localhost";
 
@@ -563,6 +722,7 @@ void setup()
     myBundle = new OscBundle();
     myMessage = new OscMessage("/"); 
 
+    //Q: are there M gestures with N pose-frames??
     grid = new Pose[M][N];
     for (int i = 0; i < M; i++) {
       for (int j = 0; j < N; j++) {
@@ -570,12 +730,25 @@ void setup()
       }
     }
 
+    // ten poses with N pose-frames
+  //  pose = new Pose();//[10];
     move = new Pose[10][N];
 
-    ringbuffer = new RingBuffer[2];
-    for (int i = 0; i < 2; i++) {
+    // @author: LHA
+    // RingBuffer[2] means, max. 2 persons can be tracked and all coordinate are saved in poseArray
+    ringbuffer = new RingBuffer[PLAYER_COUNT];
+    for (int i = 0; i < PLAYER_COUNT; i++) {
         ringbuffer[i] = new RingBuffer();
     }
+    
+    // ==== COPY ===
+    // absolute coordinate for hands
+    ringbufferHand = new RingBufferForThrowAction[PLAYER_COUNT];
+    for (int i = 0; i < PLAYER_COUNT; i++) {
+        ringbufferHand[i] = new RingBufferForThrowAction();
+    }
+    // ==== COPY ===
+    
     
     data = new Data();
   
@@ -611,17 +784,38 @@ void setup()
         }
     }
 
-    warnings = new PImage[2][8];
+    //TODO: more than 2 players
 
-    warnings[0][0] = loadImage(dataPath("go_left_red.png"));    
-    warnings[0][1] = loadImage(dataPath("go_lf_red.png"));
-    warnings[0][2] = loadImage(dataPath("go_front_red.png"));
-    warnings[0][3] = loadImage(dataPath("go_rf_red.png"));
-    warnings[0][4] = loadImage(dataPath("go_right_red.png"));
-    warnings[0][5] = loadImage(dataPath("go_rb_red.png"));
-    warnings[0][6] = loadImage(dataPath("go_back_red.png"));
-    warnings[0][7] = loadImage(dataPath("go_lb_red.png"));
+    warnings = new PImage[PLAYER_COUNT][8];
 
+    for (int i=0; i < PLAYER_COUNT; i++)
+    {
+
+      warnings[i][0] = loadImage(dataPath("go_left_red.png"));    
+      warnings[i][1] = loadImage(dataPath("go_lf_red.png"));
+      warnings[i][2] = loadImage(dataPath("go_front_red.png"));
+      warnings[i][3] = loadImage(dataPath("go_rf_red.png"));
+      warnings[i][4] = loadImage(dataPath("go_right_red.png"));
+      warnings[i][5] = loadImage(dataPath("go_rb_red.png"));
+      warnings[i][6] = loadImage(dataPath("go_back_red.png"));
+      warnings[i][7] = loadImage(dataPath("go_lb_red.png"));
+
+      warning[i] = -1;
+      
+      PLAYER_COLORS[i] = new PVector();
+      switch(i % 5){
+        case 0: PLAYER_COLORS[i] = new PVector(255,0,0); break;
+        case 1: PLAYER_COLORS[i] = new PVector(0,255,0); break;
+        case 2: PLAYER_COLORS[i] = new PVector(0,0,255); break;
+        case 3: PLAYER_COLORS[i] = new PVector(255,0,255); break;
+        case 4: PLAYER_COLORS[i] = new PVector(255,255,0); break;
+        default: PLAYER_COLORS[i] = new PVector(128,128,128); break;
+        
+      }
+    }
+
+   
+    /*
     warnings[1][0] = loadImage(dataPath("go_left_blue.png"));    
     warnings[1][1] = loadImage(dataPath("go_lf_blue.png"));
     warnings[1][2] = loadImage(dataPath("go_front_blue.png"));
@@ -630,9 +824,7 @@ void setup()
     warnings[1][5] = loadImage(dataPath("go_rb_blue.png"));
     warnings[1][6] = loadImage(dataPath("go_back_blue.png"));
     warnings[1][7] = loadImage(dataPath("go_lb_blue.png"));
-
-    warning[0] = -1;
-    warning[1] = -1;
+    */
 
     shapeOfUser = loadImage(dataPath("shape.png"));  
     kineticspace = loadImage(dataPath("kinetic_space.png"));
@@ -650,38 +842,117 @@ void setup()
     // Set the font and its size (in units of pixels)
     textFont(fontA32, 32);
  
-    background(0,0,0);
-    stroke(0,0,255);
-    strokeWeight(3);
-    smooth();
-  
+    //TODO: ui stuff
+    if (showDebugUI)
+    {
+      background(0,0,0);
+      stroke(0,0,255);
+      strokeWeight(3);
+      smooth();
+    }
     pg = createGraphics(context.depthWidth(), context.depthHeight(), P2D);
   
     if (!useFullscreen)
     {
         // size(1070, 850, OPENGL); 
         // size(1070, 850); 
-        size(1170, 800);
+        size(1170, 800, P3D);
         
-        pushMatrix();
-        rotate(-PI/2);
-        image(kineticspace, -780, 1070);
-        popMatrix();
+      //  pushMatrix();
+      //  rotate(-PI/2);
+      //  image(kineticspace, -780, 1070);
+      //  popMatrix();
     }
     else
     {
-        size(1280, 800);
+        size(1280, 800, P3D);
         // Create the fullscreen object
         // fs = new FullScreen(this); 
   
         // enter fullscreen mode
         // fs.enter(); 
         
-        pushMatrix();
-        rotate(-PI/2);
-        image(kineticspace, -780, 1180);
-        popMatrix();
+       // pushMatrix();
+       // rotate(-PI/2);
+       // image(kineticspace, -780, 1180);
+       // popMatrix();
     }
+    
+    kinectToFieldScaled.set(kinectToField);
+    kinectToFieldScaled.apply(kinectScale);
+
+    otherKinectToFieldScaled.set(otherKinectToFieldTranslate);
+    otherKinectToFieldScaled.apply(otherKinectToFieldRotate);
+    otherKinectToFieldScaled.apply(kinectScale);
+    
+    snowball = loadImage("Schneeball.png");
+    bg = loadImage("Background.png");
+    bg.resize(width, height);
+    
+    for(int i=0; i<spielerzahl; i++) 
+    {
+     for(int j=0; j<modus; j++) 
+     {
+        String imageName = "held" + i + j + ".png";
+        playas[i][j] = loadImage(imageName);
+         
+     }
+   }
+}
+
+/* incoming osc message are forwarded to the oscEvent method. */
+void oscEvent(OscMessage updateMessage) {
+  /* print the address pattern and the typetag of the received OscMessage */
+//  print("### received an osc message.");
+//  print(" addrpattern: "+updateMessage.addrPattern());
+  
+  if (!updateMessage.addrPattern().equals("/update"))
+  {
+    return;
+  }
+
+   for(int i = 0; i < 4; i++) {
+     
+      playerNecks[i] = new PVector();
+      playerNecks[i].x = updateMessage.get(i*9+0).floatValue();
+      playerNecks[i].y = updateMessage.get(i*9+1).floatValue();
+      playerNecks[i].z = updateMessage.get(i*9+2).floatValue();
+
+
+      playerOldHands[i] = new PVector();
+      playerOldHands[i].x = updateMessage.get(i*9+3).floatValue();
+      playerOldHands[i].y = updateMessage.get(i*9+4).floatValue();
+      playerOldHands[i].z = updateMessage.get(i*9+5).floatValue();
+
+
+      playerActualHands[i] = new PVector();
+      playerActualHands[i].x = updateMessage.get(i*9+6).floatValue();
+      playerActualHands[i].y = updateMessage.get(i*9+7).floatValue();
+      playerActualHands[i].z = updateMessage.get(i*9+8).floatValue();
+     
+   }
+
+   for(int i = 0; i < 4; i++) {
+     
+      if(playerNecks[i].x != 0) {
+       
+        println("player " + i);
+        println("\tneck: ");
+        println("\t" + playerNecks[i]);
+        
+        println("\told hand");
+        println("\t" + playerOldHands[i]);
+        
+        println("\tactual hand");
+        println("\t" + playerActualHands[i]);
+
+      } else {
+        //println("no information");
+      }
+
+     
+   }
+ 
 }
 
 void sendOSCEvent(int event, int person)
@@ -723,58 +994,284 @@ void sendOSCEvent(int event, int person)
     myBundle.clear();  
 }
 
+class Ball
+{
+  PVector pos;
+  PVector dir;
+}
+
+ArrayList<Ball> balls = new ArrayList<Ball>();
+
+void updateBalls()
+{
+  for (Ball b : balls)
+  {
+    b.pos.add(b.dir);
+   
+    line(b.pos.x, b.pos.y, b.pos.z, b.pos.x, 0, b.pos.z);
+    
+    pushMatrix();
+    translate(b.pos.x, b.pos.y, b.pos.z);
+    textureMode(NORMALIZED);
+    beginShape();
+    texture(snowball);
+    vertex(-0.05f, -0.05f, 0f, 0, 0);
+    vertex(0.05f, -0.05f, 0f, 1, 0);
+    vertex(0.05f, 0.05f, 0f, 1, 1);
+    vertex(-0.05f, 0.05f, 0f, 0, 1);
+    endShape();
+    popMatrix();
+  }
+
+  for (int i = 0; i < balls.size(); ++i)
+  {
+    if (isBrokenBall(balls.get(i)))
+    {
+      balls.remove(i);
+      --i;
+    }
+  }
+}
+
+boolean isBrokenBall(Ball ball)
+{
+    return (ball.pos.mag() > 10 ||
+            ball.pos.y <= 0 ||
+            ball.pos.y >= 3);
+}
+
+static int CHECK_SKELETON_COUNT = 6;
+float screenWidthMeters = 4;
+
+void drawGameField()
+{
+    // draw spielfeld 
+    //background(255,255,255);
+
+    pushMatrix();
+    
+    //TODO: ui man kann den ursprung in processing bei setup festlegen 
+    translate(width/2, height/2);
+		
+
+
+    float aspect = (float)width/(float)height;
+    float screenHeightMeters = screenWidthMeters / aspect;
+    float metersToPixel = width/screenWidthMeters;
+		
+    scale(metersToPixel);
+		
+  
+    frustum((float)screenWidthMeters/2, -(float)screenWidthMeters/2, -(float)screenHeightMeters/2, (float)screenHeightMeters/2, 3.1f, 15f);
+		
+		
+				
+//    applyMatrix(1,0,0,0,
+//                0, -1, 0, 0,
+//		0,0,1,0,
+//		0,0,0,1);
+//    translate(0, -cameraHeight, -cameraDist);
+    applyMatrix(fieldToCameraTranslation);
+    applyMatrix(fieldToCameraRotation);
+
+    /* Weltkoordinaten */
+		
+    line(-2, 0, 0, 2, 0, 0);
+    line(-2, 0, 4, -2, 0, -4);
+    line(2, 0, 4, 2, 0, -4);
+		
+               
+ 		
+		
+   
+    pushMatrix();
+    applyMatrix(kinectToField);
+		/* Kinectkoordinaten */
+ 
+     //box(0.3f, 0.05f, 0.07f);
+
+    popMatrix();
+}
+
+void drawPlayer(PVector neck, boolean transparent)
+{
+if (false)
+{
+  line(neck.x, 0, neck.z, neck.x, neck.y, neck.z);
+ 
+             pushMatrix();
+             translate(neck.x, neck.y, neck.z);
+             box(0.1f,0.1f,0.1f);
+             popMatrix();
+}            
+             pushMatrix();
+             float aspect = (float)playas[0][0].width / (float)playas[0][0].height;
+             float heldHeight = neck.y + 0.3f;
+             float heldWidth = heldHeight * aspect;
+             translate(neck.x, 0, neck.z);
+             textureMode(NORMALIZED);
+             beginShape();
+             if (transparent)
+             {
+               tint(255, 128);
+             }
+             texture(playas[0][0]);
+             vertex(-heldWidth/2, heldHeight, 0, 0, 0);
+             vertex(heldWidth/2, heldHeight, 0, 1, 0);
+             vertex(heldWidth/2, 0, 0, 1, 1);
+             vertex(-heldWidth/2, 0, 0, 0, 1);
+             endShape();
+             
+             noTint();
+             popMatrix();
+}
+
+boolean vectorNullOrZero(PVector vec)
+{
+  return (vec == null) || (vec.x == 0 && vec.y == 0 && vec.z == 0);
+}
+
+void createBall(PVector throwStartPos, PVector throwEndPos, PMatrix3D transform)
+{
+                    Ball ball = new Ball();
+                  PVector fieldThrowEndPos = new PVector();
+                  transform.mult(throwEndPos, fieldThrowEndPos);
+                  
+                  PVector fieldThrowStartPos = new PVector();
+                  transform.mult(throwStartPos, fieldThrowStartPos);
+                 
+                  ball.pos = fieldThrowEndPos;
+                         
+                  PVector dir = PVector.sub(fieldThrowEndPos, fieldThrowStartPos);
+                  dir.y = 0;
+                  
+                  dir.normalize();
+                  dir.mult(0.1f);
+                  
+                  ball.dir = dir; 
+                
+                  balls.add(ball);    
+}
+
 void draw()
 {
-    // update the cam
+  strokeWeight(0);
+  background(bg); 
+
+  // update the cam
     context.update();
   
-    // draw depthImageMap
     pg.beginDraw();
-    pg.image(context.depthImage(),0,0);
 
-    ringbuffer[0].display();
+    //TODO: ui stuff
+
+    if (showDebugUI)  
+    {
+      // draw depthImageMap
+      pg.image(context.depthImage(),0,0);
+
+      ringbuffer[0].display();
+    }
     
     // process the skeleton if it's available
     foundSkeleton = false;
     person = 0;
 
-    for (int i = 1; i<6; i++)
-    {
-        if ( (context.isTrackingSkeleton(i)) && (person < 2) )
-        {
-            evaluateSkeleton(i);
-            foundSkeleton = true;
-            person++;
-        }
+    if (!showDebugUI)
+    { 
+      drawGameField();
     }
   
-    counter2++;
-    counter2 %= 25;
-    if (counter2 == 0)
+    for (int i = 0; i < playerNecks.length; ++i)
     {
+      if (!showDebugUI)
+      {
+        if(!vectorNullOrZero(playerNecks[i]))      
+        {
+          PVector neck = new PVector();
+          otherKinectToFieldScaled.mult(playerNecks[i], neck);
+          drawPlayer(neck, false);      
+        }
+      }
+
+      if (!vectorNullOrZero(playerActualHands[i]) &&
+          !vectorNullOrZero(playerOldHands[i]))
+      {
+        createBall(playerOldHands[i], playerActualHands[i], otherKinectToFieldScaled);
+        playerActualHands[i] = null;
+        playerOldHands[i] = null;
+      }
+    }
+    
+    for (int i = 1; i< CHECK_SKELETON_COUNT; i++)
+    {
+          //TODO more than 2 players
+  
+        if ( (context.isTrackingSkeleton(i)) && (person < PLAYER_COUNT) )
+        {
+            
+            PVector neck = evaluateSkeleton(i);
+            
+            //println(neck);
+           
+            if (!showDebugUI) 
+            {
+              
+              kinectToFieldScaled.mult(neck, neck);
+                
+              //translate(neck.x * 0.001f, neck.y * 0.001f, -neck.z * 0.001f);
+	      //TODO: ui stuff
+              drawPlayer(neck, true);
+         
+                
+           }
+              //TODO: ball erzeugen nur bei abwurf
+           if (ballThrow)
+           {
+               createBall(throwStartPos, throwEndPos, kinectToFieldScaled);           
+               ballThrow = false;       
+           }
+           foundSkeleton = true;
+           person++;
+           
+        }
+    }
+    if (!showDebugUI) 
+    {
+      updateBalls();
+       
+      counter2++;
+      counter2 %= 25;
+      if (counter2 == 0)
+      {
         /* send OSC message */
         OscMessage myMessage = new OscMessage("/status");
         if (foundSkeleton) myMessage.add("tracking ...");
         if (!foundSkeleton) myMessage.add("looking for pose ...");
         oscP5.send(myMessage, myRemoteLocation); 
+      }
     }
-  
     pg.endDraw();
+    
+    popMatrix();
 
-    if (switchDisplay)
+    if (showDebugUI)
     {
+
+      if (switchDisplay)
+      {
         image(pg, 0, 0);
-    }
-    else
-    {
+      }
+      else
+      {
         pushMatrix();
         scale(-1.0, 1.0);
         image(pg,-pg.width,0);
         popMatrix();
-    }
+      }
   
-    if (!foundSkeleton) 
-    {
+      if (!foundSkeleton) 
+      {
         stroke(0,0,0);
         fill(0,0,0);
         rect(context.depthWidth(), 0, 400, 485);
@@ -785,87 +1282,88 @@ void draw()
         textAlign(CENTER);
         text("Please register user!", context.depthWidth() / 2, 40);
         image(shapeOfUser, 0, 0);
-    }
-    else if ((warning[0] >= 0) || (warning[1] >= 0))
-    {
-        if ((warning[0] >= 0) && (warning[1] < 0))
+      }
+      //TODO more than 2 players
+      else 
+      {
+        for (int i=0; i < PLAYER_COUNT; i++)
         {
-            image(warnings[0][warning[0]],context.depthWidth()/2-100, context.depthHeight()/2 - 50);
+          if ((warning[i] >= 0) )
+          {
+            image(warnings[i][warning[i]],context.depthWidth()/2-100, context.depthHeight()/2 - 50);
+          }
+          
         }
-        else if ((warning[1] >= 0) && (warning[0] < 0))
-        {
-            image(warnings[1][warning[1]],context.depthWidth()/2-100, context.depthHeight()/2 - 50);
-        }
-        else
-        {
-            image(warnings[0][warning[0]],context.depthWidth()/2-100-75, context.depthHeight()/2 - 50);
-            image(warnings[1][warning[1]],context.depthWidth()/2-100+75, context.depthHeight()/2 - 50);
-        }
-    }
+      }
 
-    if (updateDisplay)
-    {
-        updateDisplay = false;
-      
-        if (switchDisplay)
-        {
-            for (int i = 0; i<=4; i++)
-            {
-                image(foto[i], i * (context.depthWidth() + 400) / 5 + i*5, context.depthHeight() + 15, (context.depthWidth() + 400) / 5, 130);
-                image(foto[(i+5)], i * (context.depthWidth() + 400) / 5 + i*5, context.depthHeight() + 170, (context.depthWidth() + 400) / 5, 130);
-            }
-        }
-        else
-        {
-            for (int i = 0; i<=4; i++)
-            {
-                pushMatrix();
-                scale(-1.0, 1.0);
-                image(foto[i], -(i+1) * (context.depthWidth() + 400) / 5 - i*5, context.depthHeight() + 15, (context.depthWidth() + 400) / 5, 130);
-                image(foto[(i+5)], -(i+1) * (context.depthWidth() + 400) / 5 - i*5, context.depthHeight() + 170, (context.depthWidth() + 400) / 5, 130);
-                popMatrix();
-            }
-        }
+      if (updateDisplay)
+      {
+          updateDisplay = false;
         
-        for (int i = 0; i<=4; i++)
-        {
-            if (empty[i])
-            {
-                pushMatrix();
-                scale(-1.0, 1.0);
-                image(foto[i], -(i+1) * (context.depthWidth() + 400) / 5 - i*5, context.depthHeight() + 15, (context.depthWidth() + 400) / 5, 130);
-                popMatrix();
-            }
-            if (empty[i+5])
-            {
-                pushMatrix();
-                scale(-1.0, 1.0);
-                image(foto[(i+5)], -(i+1) * (context.depthWidth() + 400) / 5 - i*5, context.depthHeight() + 170, (context.depthWidth() + 400) / 5, 130);
-                popMatrix();
-            }            
-        }
-
-        textFont(fontA12, 16);
-        fill(255,255,255);
-        textAlign(CENTER);
-        for (int i = 0; i<=4; i++)
-        {
-            text(i, i * (context.depthWidth() + 400) / 5 + i*5 + 12, context.depthHeight() + 32);
-            // image(foto[i], i * (context.depthWidth() + 400) / 5 + i*5, context.depthHeight() + 15, (context.depthWidth() + 400) / 5, 130);
-            text((i+5), i * (context.depthWidth() + 400) / 5 + i*5 + 12, context.depthHeight() + 187);
-            // image(foto[(i+5)], i * (context.depthWidth() + 400) / 5 + i*5, context.depthHeight() + 170, (context.depthWidth() + 400) / 5, 130);
-        }                
-    }
+          if (switchDisplay)
+          {
+              for (int i = 0; i<=4; i++)
+              {
+                  image(foto[i], i * (context.depthWidth() + 400) / 5 + i*5, context.depthHeight() + 15, (context.depthWidth() + 400) / 5, 130);
+                  image(foto[(i+5)], i * (context.depthWidth() + 400) / 5 + i*5, context.depthHeight() + 170, (context.depthWidth() + 400) / 5, 130);
+              }
+          }
+          else
+          {
+              for (int i = 0; i<=4; i++)
+              {
+                  pushMatrix();
+                  scale(-1.0, 1.0);
+                  image(foto[i], -(i+1) * (context.depthWidth() + 400) / 5 - i*5, context.depthHeight() + 15, (context.depthWidth() + 400) / 5, 130);
+                  image(foto[(i+5)], -(i+1) * (context.depthWidth() + 400) / 5 - i*5, context.depthHeight() + 170, (context.depthWidth() + 400) / 5, 130);
+                  popMatrix();
+              }
+          }
+          
+          for (int i = 0; i<=4; i++)
+          {
+              if (empty[i])
+              {
+                  pushMatrix();
+                  scale(-1.0, 1.0);
+                  image(foto[i], -(i+1) * (context.depthWidth() + 400) / 5 - i*5, context.depthHeight() + 15, (context.depthWidth() + 400) / 5, 130);
+                  popMatrix();
+              }
+              if (empty[i+5])
+              {
+                  pushMatrix();
+                  scale(-1.0, 1.0);
+                  image(foto[(i+5)], -(i+1) * (context.depthWidth() + 400) / 5 - i*5, context.depthHeight() + 170, (context.depthWidth() + 400) / 5, 130);
+                  popMatrix();
+              }            
+          }
   
+          textFont(fontA12, 16);
+          fill(255,255,255);
+          textAlign(CENTER);
+          for (int i = 0; i<=4; i++)
+          {
+              text(i, i * (context.depthWidth() + 400) / 5 + i*5 + 12, context.depthHeight() + 32);
+              // image(foto[i], i * (context.depthWidth() + 400) / 5 + i*5, context.depthHeight() + 15, (context.depthWidth() + 400) / 5, 130);
+              text((i+5), i * (context.depthWidth() + 400) / 5 + i*5 + 12, context.depthHeight() + 187);
+              // image(foto[(i+5)], i * (context.depthWidth() + 400) / 5 + i*5, context.depthHeight() + 170, (context.depthWidth() + 400) / 5, 130);
+          }                
+      }
+    }
+    
     // evaluate and draw DTW
     if (foundSkeleton)
     {
-     
-        noStroke();             
-        fill(0,0,0);
-        rect(0, context.depthHeight() + 145, 1070, 20);
-        rect(0, context.depthHeight() + 300, 1070, 20);
+     	//TODO:ui stuff
+        if (showDebugUI)
+        {
+          noStroke();             
+          fill(0,0,0);
+          rect(0, context.depthHeight() + 145, 1070, 20);
+          rect(0, context.depthHeight() + 300, 1070, 20);
+        }
         
+        // current person count
         for (int p = 0; p<person; p++)
         {
             for (int i = 0; i <= 9; i++)
@@ -877,28 +1375,41 @@ void draw()
                     cost[p][i] = (log(cost[p][i]-1.0) - 5.5)/2.0;
                     // println("cost(" + i + "): " + cost);
                     
-                    fill(255,0,0);
-                    if (p == 1) fill(0,0,255);
-                    if ( cost[p][i] <= 0.25 )
-                    {
-                        fill(0,255,0);
-                    }
+                    if (showDebugUI) 
+                    {            
+                      fill(255,0,0);
+                      if (p == 1) fill(0,0,255);
+                      if ( cost[p][i] <= 0.25 )
+                      {
+                          fill(0,255,0);
+                      }
+            
                     
-                    if ( ( cost[p][i] > 0.25 ) && ( cost[p][i] < 0.35 ) )
-                    {
+                      if ( ( cost[p][i] > 0.25 ) && ( cost[p][i] < 0.35 ) )
+                      {
                         float normalized = 10.0 * (cost[p][i] - 0.25);
                         fill(255 * normalized,255 * (1.0-normalized),0);
                         if (p == 1) fill(0,255 * (1.0-normalized),255 * normalized); 
-                    }
+                      }
                                     
-                    if (i < 5) rect(i * (context.depthWidth() + 400) / 5 + i*5, context.depthHeight() + 145 + 10*p, min(1.0, max(0.01, 1.0-cost[p][i])) * ((context.depthWidth() + 400) / 5), 10);
-                    if (i >= 5) rect((i-5) * (context.depthWidth() + 400) / 5 + (i-5)*5, context.depthHeight() + 300 + 10*p, min(1.0, max(0.01, 1.0-cost[p][i])) * ((context.depthWidth() + 400) / 5), 10);
+                      if (i < 5) rect(i * (context.depthWidth() + 400) / 5 + i*5, context.depthHeight() + 145 + 10*p, min(1.0, max(0.01, 1.0-cost[p][i])) * ((context.depthWidth() + 400) / 5), 10);
+                      if (i >= 5) rect((i-5) * (context.depthWidth() + 400) / 5 + (i-5)*5, context.depthHeight() + 300 + 10*p, min(1.0, max(0.01, 1.0-cost[p][i])) * ((context.depthWidth() + 400) / 5), 10);
+                    }
                     
                     if ( ( cost[p][i] < 0.3 ) && ( costLast[p][i] >= 0.3 ) )
                     {
-                        println("found gesture #" + i + " user #" + p);
-                        sendOSCEvent(i, p);                    
-                    }   
+                      ballThrow = true;
+                    
+                      println("Throw!");
+                  
+                    
+                      PVector lHA = actualHandPose.leftHandAbsolute;
+                      throwEndPos = new PVector(lHA.x, lHA.y, lHA.z);
+                      PVector olHA = oldHandPose.leftHandAbsolute;
+                      throwStartPos = new PVector(olHA.x, olHA.y, olHA.z);
+                        
+                      sendOSCEvent(i, p);                    
+                    }
                 }
             }
         }
@@ -907,10 +1418,12 @@ void draw()
 
 
 // draw the skeleton with the selected joints
-void evaluateSkeleton(int userId)
+PVector evaluateSkeleton(int userId)
 {
     Pose pose = new Pose();
 
+// @author: LHA
+// the draw functionality is called frequently
     PVector jointNeck3D = new PVector();
   
     PVector jointLeftShoulder3D = new PVector();
@@ -977,65 +1490,161 @@ void evaluateSkeleton(int userId)
     pose.jointRightHandRelative.y = jointRightHand3D.y - jointNeck3D.y;
     pose.jointRightHandRelative.z = jointRightHand3D.z - jointNeck3D.z;
 
-    if (person == 0) pg.stroke(255,0,0,255);
-    if (person == 1) pg.stroke(0,0,255,255);
-    pg.strokeWeight(5);
-    pg.line(jointNeck2D.x,jointNeck2D.y, jointLeftShoulder2D.x,jointLeftShoulder2D.y);
-    pg.line(jointLeftShoulder2D.x,jointLeftShoulder2D.y, jointLeftElbow2D.x,jointLeftElbow2D.y);
-    pg.line(jointLeftElbow2D.x,jointLeftElbow2D.y, jointLeftHand2D.x,jointLeftHand2D.y);  
-    pg.line(jointNeck2D.x,jointNeck2D.y, jointRightShoulder2D.x,jointRightShoulder2D.y);
-    pg.line(jointRightShoulder2D.x,jointRightShoulder2D.y, jointRightElbow2D.x,jointRightElbow2D.y);
-    pg.line(jointRightElbow2D.x,jointRightElbow2D.y, jointRightHand2D.x,jointRightHand2D.y);
 
+    //TODO shoulder orientation in space
+    
+    // get vector between shoulders and computer the normal in the middle of the [strecke]
+    // only 2d vector, as angle between only computes one angle (x,y component)
+    PVector leftToRight = new PVector();
+    leftToRight.x = pose.jointRightShoulderRelative.x - pose.jointLeftShoulderRelative.x;
+    leftToRight.y = pose.jointRightShoulderRelative.z - pose.jointLeftShoulderRelative.z;
+
+    // normalize
+    leftToRight.normalize();
+    // the orientation in the view from the kinect sensor
+    PVector facingV = new PVector(1,0); //use the normal to the z-direction (facing of the k.sensor) //0,1);
+    // 0 -> front face to sensor face
+    // 90 -> turned front to right
+    // -90 -> turned front to left
+    float angle = degrees( PVector.angleBetween(leftToRight,facingV) );
+    if (leftToRight.y > 0) angle = -angle;
+    // TODO compute back-facing vector (test sign )
+    // negative x is with face to the kinect device,   
+   // println(" shoulders "+person + " vektor "+leftToRight + " angle "+angle); 
+    
+    
+    
+    
+    //TODO: more than 2 players, different colors
+    if (person < PLAYER_COLORS.length) pg.stroke(PLAYER_COLORS[person].x,PLAYER_COLORS[person].y,PLAYER_COLORS[person].z,255);
+    
     warning[person] = -1; 
   
-    textAlign(CENTER);
-    textFont(fontA32, 32);
-    fill(255,0,0);
-    if (jointNeck2D.x < 100) 
+	//TODO: ui stuff
+    if (showDebugUI)
     {
-        warning[person] = 0;
+      pg.strokeWeight(5);
+      pg.line(jointNeck2D.x,jointNeck2D.y, jointLeftShoulder2D.x,jointLeftShoulder2D.y);
+      pg.line(jointLeftShoulder2D.x,jointLeftShoulder2D.y, jointLeftElbow2D.x,jointLeftElbow2D.y);
+      pg.line(jointLeftElbow2D.x,jointLeftElbow2D.y, jointLeftHand2D.x,jointLeftHand2D.y);  
+      pg.line(jointNeck2D.x,jointNeck2D.y, jointRightShoulder2D.x,jointRightShoulder2D.y);
+      pg.line(jointRightShoulder2D.x,jointRightShoulder2D.y, jointRightElbow2D.x,jointRightElbow2D.y);
+      pg.line(jointRightElbow2D.x,jointRightElbow2D.y, jointRightHand2D.x,jointRightHand2D.y);
+
+      
+      textAlign(CENTER);
+      textFont(fontA32, 32);
+      fill(255,0,0);
+
+
+      // TODO: ui: show the warnings in game mode ?!?
+      if (jointNeck2D.x < 100) 
+      {
+          warning[person] = 0;
+      }
+    
+      if (jointNeck2D.x >  540) 
+      {
+          warning[person] = 4;
+      }
+    
+      if (jointNeck3D.z > 4000)
+      {
+          warning[person] = 2;
+        
+          if (jointNeck2D.x < 100) 
+          {
+              warning[person] = 1;
+          }
+        
+          if (jointNeck2D.x > 540) 
+          {
+              warning[person] = 3;
+          }
+      }
+    
+      if (jointNeck2D.z <  1500)
+      {
+          warning[person] = 6;
+        
+          if (jointNeck2D.x < 100) 
+          {
+              warning[person] = 7;
+          }
+        
+          if (jointNeck2D.x > 540) 
+          {
+              warning[person] = 5;
+          }
+      }
     }
     
-    if (jointNeck2D.x >  540) 
-    {
-        warning[person] = 4;
-    }
+    // ==== COPY ===
+    // LHA
+    // the actual handPose    
+    actualHandPose.leftHandAbsolute.x = jointLeftHand3D.x;
+    actualHandPose.leftHandAbsolute.y = jointLeftHand3D.y;
+    actualHandPose.leftHandAbsolute.z = jointLeftHand3D.z;
     
-    if (jointNeck3D.z > 4000)
-    {
-        warning[person] = 2;
-        
-        if (jointNeck2D.x < 100) 
-        {
-            warning[person] = 1;
-        }
-        
-        if (jointNeck2D.x > 540) 
-        {
-            warning[person] = 3;
-        }
-    }
+    actualHandPose.rightHandAbsolute.x = jointRightHand3D.x;
+    actualHandPose.rightHandAbsolute.y = jointRightHand3D.y;
+    actualHandPose.rightHandAbsolute.z = jointRightHand3D.z;
+
+    // add the new hand pose to the ringbuffer for hand poses
+    ringbufferHand[person].addANewPose(actualHandPose);
     
-    if (jointNeck2D.z <  1500)
-    {
-        warning[person] = 6;
-        
-        if (jointNeck2D.x < 100) 
-        {
-            warning[person] = 7;
-        }
-        
-        if (jointNeck2D.x > 540) 
-        {
-            warning[person] = 5;
-        }
-    }
-  
-  
+    // the older pose
+    oldHandPose = ringbufferHand[person].getTheOlderPose();
+    
+    if(oldHandPose == null) println("NO history");
+    // ==== COPY ===
+    
     // add new pose to ringbuffer
-    pose = normalizePose( pose );
     ringbuffer[person].fillBuffer( pose );
+    
+    // the distance is called only if the throw gesture
+    if(foundSkeleton){
+    //  println("DISTANCE: ");
+    //  println(dist(actualHandPose.leftHandAbsolute.x,
+//            actualHandPose.leftHandAbsolute.y,
+//            actualHandPose.leftHandAbsolute.z,
+//            oldHandPose.leftHandAbsolute.x,
+//            oldHandPose.leftHandAbsolute.y,
+//            oldHandPose.leftHandAbsolute.z));
+
+    }
+    
+    // SAVE
+	/*
+    if ((savePose >= 0) && (savePose < 10) && (person == 0))
+    {
+      pose[savePose].jointLeftShoulderRelative.x = pose[0].jointLeftShoulderRelative.x;
+      pose[savePose].jointLeftShoulderRelative.y = pose[0].jointLeftShoulderRelative.y;
+      pose[savePose].jointLeftShoulderRelative.z = pose[0].jointLeftShoulderRelative.z;
+    
+      pose[savePose].jointLeftElbowRelative.x = pose[0].jointLeftElbowRelative.x;
+      pose[savePose].jointLeftElbowRelative.y = pose[0].jointLeftElbowRelative.y;
+      pose[savePose].jointLeftElbowRelative.z = pose[0].jointLeftElbowRelative.z;
+    
+      pose[savePose].jointLeftHandRelative.x = pose[0].jointLeftHandRelative.x;
+      pose[savePose].jointLeftHandRelative.y = pose[0].jointLeftHandRelative.y;
+      pose[savePose].jointLeftHandRelative.z = pose[0].jointLeftHandRelative.z;
+    
+      pose[savePose].jointRightShoulderRelative.x = pose[0].jointRightShoulderRelative.x;
+      pose[savePose].jointRightShoulderRelative.y = pose[0].jointRightShoulderRelative.y;
+      pose[savePose].jointRightShoulderRelative.z = pose[0].jointRightShoulderRelative.z;
+    
+      pose[savePose].jointRightElbowRelative.x = pose[0].jointRightElbowRelative.x;
+      pose[savePose].jointRightElbowRelative.y = pose[0].jointRightElbowRelative.y;
+      pose[savePose].jointRightElbowRelative.z = pose[0].jointRightElbowRelative.z;
+    
+      pose[savePose].jointRightHandRelative.x = pose[0].jointRightHandRelative.x;
+      pose[savePose].jointRightHandRelative.y = pose[0].jointRightHandRelative.y;
+      pose[savePose].jointRightHandRelative.z = pose[0].jointRightHandRelative.z;
+    
+      savePose = -1;
+    } */
+    return jointNeck3D;
 }
 
 // -----------------------------------------------------------------
@@ -1237,10 +1846,18 @@ void loadData(int moveID) {
 // Keyboard events
 
 void keyPressed()
-{  
+{
+  // check for active users
   IntVector userList = new IntVector();
-  int user;
-    
+  context.getUsers(userList);
+  if(userList.size() < 1)
+  {
+    println("You need at least one active user!");
+    return;
+  }
+  
+  int user = userList.get(0);
+  
   if ( (key >= '0') && (key <= '9') && (foundSkeleton) )
   {
       int keyIndex = key-'0';
@@ -1259,6 +1876,7 @@ void keyPressed()
   switch(key)
   {
   case 'c': 
+    // savePose = -1; 
     pg.save ("capture.png");
     break; 
 
@@ -1272,6 +1890,10 @@ void keyPressed()
     if (displayCost < 0) displayCost = 0;
     break;
 
+  case 'u':
+    showDebugUI = ! showDebugUI;
+    println(" show debug "+showDebugUI);
+    break;
   case 'd':
     updateDisplay = true;
     if (switchDisplay) 
