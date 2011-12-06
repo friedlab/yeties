@@ -3,7 +3,8 @@
 * --------------------------------------------------------------------------
 * prog:  Matthias Wölfel,
 *        Elke Müller,
-*        Jan Felix Reuter
+*        Jan Felix Reuter,
+         Thomas Schenker
 *        and others (need_to_be_added)
 * date:  04/12/2011 (m/d/y)
 * ver:   0.1
@@ -26,8 +27,6 @@ import netP5.*;
 SimpleOpenNI context;
 OscP5 oscP5;
 NetAddress myRemoteLocation;
-OscBundle myBundle;
-OscMessage myMessage;
 
 boolean showDebugUI = false;
 //TODO: more than 2 players
@@ -719,8 +718,6 @@ void setup()
 
     oscP5 = new OscP5(this,portToListenTo);
     myRemoteLocation = new NetAddress(ipAddressToSendTo, portToSendTo);  
-    myBundle = new OscBundle();
-    myMessage = new OscMessage("/"); 
 
     //Q: are there M gestures with N pose-frames??
     grid = new Pose[M][N];
@@ -953,45 +950,6 @@ void oscEvent(OscMessage updateMessage) {
      
    }
  
-}
-
-void sendOSCEvent(int event, int person)
-{
-    /* ==============================================================================
-        part to define OSC messages 
-       ============================================================================== */
-    switch(event)
-    {
-        case 1:
-            myMessage = new OscMessage("/layer1/clip1/connect");        
-        break; 
-
-        case 2:
-            myMessage = new OscMessage("/layer1/clip2/connect");        
-        break;                   
-        
-        case 3:
-            if (person == 0)
-            {
-                myMessage = new OscMessage("/layer2/clip2/connect");
-            }
-            else
-            {
-                myMessage = new OscMessage("/layer3/clip3/connect");
-            }
-        break;
-        
-        default: 
-            myMessage = new OscMessage("/layer1/clip3/connect");        
-        break;  
-    }    
-
-    int temp = 1;
-    myMessage.add(temp);
-    myBundle.add(myMessage);
-    myMessage.clear();
-    oscP5.send(myBundle, myRemoteLocation); 
-    myBundle.clear();  
 }
 
 class Ball
@@ -1407,8 +1365,7 @@ void draw()
                       throwEndPos = new PVector(lHA.x, lHA.y, lHA.z);
                       PVector olHA = oldHandPose.leftHandAbsolute;
                       throwStartPos = new PVector(olHA.x, olHA.y, olHA.z);
-                        
-                      sendOSCEvent(i, p);                    
+                                        
                     }
                 }
             }
@@ -1600,6 +1557,7 @@ PVector evaluateSkeleton(int userId)
     // ==== COPY ===
     
     // add new pose to ringbuffer
+    pose = normalizePose(pose);
     ringbuffer[person].fillBuffer( pose );
     
     // the distance is called only if the throw gesture
@@ -1614,36 +1572,6 @@ PVector evaluateSkeleton(int userId)
 
     }
     
-    // SAVE
-	/*
-    if ((savePose >= 0) && (savePose < 10) && (person == 0))
-    {
-      pose[savePose].jointLeftShoulderRelative.x = pose[0].jointLeftShoulderRelative.x;
-      pose[savePose].jointLeftShoulderRelative.y = pose[0].jointLeftShoulderRelative.y;
-      pose[savePose].jointLeftShoulderRelative.z = pose[0].jointLeftShoulderRelative.z;
-    
-      pose[savePose].jointLeftElbowRelative.x = pose[0].jointLeftElbowRelative.x;
-      pose[savePose].jointLeftElbowRelative.y = pose[0].jointLeftElbowRelative.y;
-      pose[savePose].jointLeftElbowRelative.z = pose[0].jointLeftElbowRelative.z;
-    
-      pose[savePose].jointLeftHandRelative.x = pose[0].jointLeftHandRelative.x;
-      pose[savePose].jointLeftHandRelative.y = pose[0].jointLeftHandRelative.y;
-      pose[savePose].jointLeftHandRelative.z = pose[0].jointLeftHandRelative.z;
-    
-      pose[savePose].jointRightShoulderRelative.x = pose[0].jointRightShoulderRelative.x;
-      pose[savePose].jointRightShoulderRelative.y = pose[0].jointRightShoulderRelative.y;
-      pose[savePose].jointRightShoulderRelative.z = pose[0].jointRightShoulderRelative.z;
-    
-      pose[savePose].jointRightElbowRelative.x = pose[0].jointRightElbowRelative.x;
-      pose[savePose].jointRightElbowRelative.y = pose[0].jointRightElbowRelative.y;
-      pose[savePose].jointRightElbowRelative.z = pose[0].jointRightElbowRelative.z;
-    
-      pose[savePose].jointRightHandRelative.x = pose[0].jointRightHandRelative.x;
-      pose[savePose].jointRightHandRelative.y = pose[0].jointRightHandRelative.y;
-      pose[savePose].jointRightHandRelative.z = pose[0].jointRightHandRelative.z;
-    
-      savePose = -1;
-    } */
     return jointNeck3D;
 }
 
