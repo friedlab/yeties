@@ -87,6 +87,7 @@ RingBuffer[] ringbuffer;
 // ring buffer for hand pose, which contains only the left hand and right hand in the absolute coordinates
 RingBufferForThrowAction[] ringbufferHand;
 
+//TODO:@LHA: this is only for one player 
 // the actual hand pose
 HandPoseAbsolute actualHandPose = new HandPoseAbsolute();
 
@@ -104,30 +105,43 @@ int counter = 0;
 int counter2 = 0;
 int counterEvent = 0;
 
+// local player positions
 PVector localPlayerNecks[] = new PVector[PLAYER_COUNT];
+static int SUPPRESS_THROW = 25; // one throw every second;
+// suppress multiple throws during a (frame) counter timespan
+int localPlayerThrowCounter[] = new int[PLAYER_COUNT];
+
+// if a player is hit
+boolean localPlayerHit[] = new boolean[PLAYER_COUNT];
+// if a player is not really hit
+boolean localPlayerFrightened[] = new boolean[PLAYER_COUNT];
 
 PVector remotePlayerNecks[] = new PVector[PLAYER_COUNT];
 PVector remotePlayerActualHands[] = new PVector[PLAYER_COUNT];
 PVector remotePlayerOldHands[] = new PVector[PLAYER_COUNT];
 
+boolean remotePlayerHit[] = new boolean[PLAYER_COUNT];
+boolean remotePlayerFrightened[] = new boolean[PLAYER_COUNT];
+
 // removed: is in PLAYER_COUNT: int spielerzahl = 3;
 //int modus = 3; //TODO: welcher modus hat welche bedeutung?
 static int PLAYER_MODUS_COUNT = 3;
 
-boolean ballThrow = false;
-PVector throwStartPos;
-PVector throwEndPos;
+//PVector throwStartPos;
+//PVector throwEndPos;
 
 static float HIT_DISTANCE = 0.6; // 60cm normalized shoulder width
 static float FRIGHTENED_DISTANCE = 1.2; // 
 
 ////////////////////////////////////
 // game ui
+
 PGraphics pg;
 
 PImage[][] playas = new PImage[PLAYER_COUNT][PLAYER_MODUS_COUNT];
 PImage bg;
 
+PImage snowball;
 
 float kinectHeight = 0.5f;
 float kinectDistance = 0.2f;
@@ -135,6 +149,7 @@ float otherKinectHeight = 0.5f;
 float otherKinectDistance = 0.2f;
 float cameraDistance = 2f;
 float cameraHeight = 1.4f;
+float screenWidthMeters = 4;
 
 PMatrix3D kinectScale = new PMatrix3D(0.001f, 0, 0, 0,
                                         0,      0.001f, 0, 0,
@@ -742,7 +757,6 @@ Pose normalizePose(Pose p) {
     return p;
 }
 
-PImage snowball;
 
 /* =====================================================================================
     setup
@@ -784,6 +798,18 @@ void setup()
     for (int i = 0; i < PLAYER_COUNT; i++) {
         ringbufferHand[i] = new RingBufferForThrowAction();
     }
+    
+    for (int i=0; i < PLAYER_COUNT; i++) {
+      localPlayerNecks[i] = null;
+      localPlayerThrowCounter[i] = SUPPRESS_THROW;
+      //TODO: hit counters, player should not be lost for the whole game
+      localPlayerHit[i] = false;
+      localPlayerFrightened[i] = false;
+      remotePlayerHit[i] = false;
+      remotePlayerFrightened[i] = false;
+      
+    }
+    
     // ==== COPY ===
     
     
@@ -1059,8 +1085,6 @@ boolean isBrokenBall(Ball ball)
             ball.pos.y >= 3);
 }
 
-// game ui
-float screenWidthMeters = 4;
 
 void drawGameField()
 {
@@ -1174,10 +1198,10 @@ void createBall(PVector throwStartPos, PVector throwEndPos, PMatrix3D transform)
                   balls.add(ball);    
 }
 
-void computeCosts(int person) {
+void computeCosts(int detectedPlayerCount) {
   //TODO: this must be also in game mode        
   // current person count
-  for (int p = 0; p<person; p++) {
+  for (int p = 0; p<detectedPlayerCount; p++) {
     for (int i = 0; i < MAX_GESTURE_COUNT; i++) {
       // compute cost
       if (!empty[i]) {
@@ -1193,7 +1217,7 @@ void computeCosts(int person) {
 void drawDebug() {
   
     foundSkeleton = false;
-    int  person = 0;
+    int  detectedPlayerCount = 0;
 
     // draw depthImageMap
     pg.image(context.depthImage(),0,0);
@@ -1202,10 +1226,10 @@ void drawDebug() {
 
     // process the skeleton if it's available
     for (int i = 1; i< CHECK_SKELETON_COUNT; i++) {
-      if ( (context.isTrackingSkeleton(i)) && (person < PLAYER_COUNT) ) {
-            PVector neck = evaluateSkeleton(i,person);
+      if ( (context.isTrackingSkeleton(i)) && (detectedPlayerCount < PLAYER_COUNT) ) {
+            PVector neck = evaluateSkeleton(i,detectedPlayerCount);
             foundSkeleton = true;
-            person++;
+            detectedPlayerCount++;
       }
     }
       
@@ -1294,11 +1318,11 @@ void drawDebug() {
           rect(0, context.depthHeight() + 300, 1070, 20);
     }
     
-    computeCosts(person);
+    computeCosts(detectedPlayerCount);
           
     //TODO: this must be also in game mode        
     // current person count
-    for (int p = 0; p<person; p++) {
+    for (int p = 0; p<detectedPlayerCount; p++) {
         for (int i = 0; i < MAX_GESTURE_COUNT; i++) {
             // compute cost
             if (!empty[i]) {
@@ -1347,7 +1371,7 @@ void draw()
     pg.beginDraw();
 
     
-      int  person = 0;
+      int  detectedPlayerCount = 0;
 
       drawGameField();
     
@@ -1370,61 +1394,73 @@ void draw()
       }
     
   
-    
+      //TODO: currently the players are switching their ids, it has to be mapped
       // detect and draw local players
       for (int i = 1; i< CHECK_SKELETON_COUNT; i++) {
-        if ( (context.isTrackingSkeleton(i)) && (person < PLAYER_COUNT) ) {
-            PVector neck = evaluateSkeleton(i,person);
+        if ( (context.isTrackingSkeleton(i)) && (detectedPlayerCount < PLAYER_COUNT) ) {
+            PVector neck = evaluateSkeleton(i,detectedPlayerCount);
 
-            //println(neck);
+//            println("old neck "+neck);
             kinectToFieldScaled.mult(neck, neck);
-                
+//            println("new neck "+neck);
+               
+            localPlayerNecks[detectedPlayerCount] = neck;
             //translate(neck.x * 0.001f, neck.y * 0.001f, -neck.z * 0.001f);
-           //TODO: ui stuff
+           
             drawPlayer(neck, true);
       
-            person++;
-           
+            detectedPlayerCount++;
         }
       }
-    
-      computeCosts(person); // updates only if person > 0
-          
-          //TODO: this must be also in game mode        
-          // current person count
-      for (int p = 0; p<person; p++) {
-        for (int i = 0; i < MAX_GESTURE_COUNT; i++) {
-           // compute cost
-           if (!empty[i]) {
-             if ( ( cost[p][i] < 0.3 ) && ( costLast[p][i] >= 0.3 ) ) {
-               ballThrow = true;
-               println("Throw!");
-                    
-               PVector lHA = actualHandPose.leftHandAbsolute;
-               throwEndPos = new PVector(lHA.x, lHA.y, lHA.z);
-               PVector olHA = oldHandPose.leftHandAbsolute;
-               throwStartPos = new PVector(olHA.x, olHA.y, olHA.z);
-                                        
-             }
-           }
-         }
-       }  
       
+      // remove lost or not registered local players
+      for (int i=detectedPlayerCount; i < PLAYER_COUNT; i++) {
+        localPlayerNecks[i] = null;
+      }
+      
+      // update local player throw counter
+      for (int i=0; i < PLAYER_COUNT; i++) {
+        if (localPlayerThrowCounter[i] < SUPPRESS_THROW) localPlayerThrowCounter[i]++; 
+      }
+    
+      computeCosts(detectedPlayerCount); // updates only if person > 0
+          
+      for (int p = 0; p<detectedPlayerCount; p++) {
+        if (localPlayerThrowCounter[detectedPlayerCount] < SUPPRESS_THROW) {
+          println("throw suppressed for player "+p+" c "+localPlayerThrowCounter[p]);
+        }
+        else {
+          for (int i = 0; i < MAX_GESTURE_COUNT; i++) {
+            if (!empty[i]) {
+              // check if gesture is accepted and was not accepted before
+              if ( ( cost[p][i] < 0.3 ) && ( costLast[p][i] >= 0.3 ) ) {
+                 println("Throw!");
+                 
+                 // reset throw counter
+                 localPlayerThrowCounter[detectedPlayerCount] = 0;
+                    
+                 //TODO: how to map the detected (in evaluateSkeleton) left or right arm to these [left/right]HandAbsolute
+                 //TODO:@LHA: why only the left hand ?
+                 // should be: PVector lHA = actualHandPose[p].leftHandAbsolute;
+                 PVector lHA = actualHandPose.leftHandAbsolute;
+                 PVector throwEndPos = new PVector(lHA.x, lHA.y, lHA.z);
+                 PVector olHA = oldHandPose.leftHandAbsolute;
+                 PVector throwStartPos = new PVector(olHA.x, olHA.y, olHA.z);
+       
+                 //TODO: send osc message
+
+                 // virtually throw: add ball
+                 createBall(throwStartPos, throwEndPos, kinectToFieldScaled);           
+                                 
+              }
+            }
+          }
+        }  
+      }
   
       updateBalls();
 
-      //TODO: ball erzeugen nur bei abwurf
-      if (ballThrow)
-      {
-         createBall(throwStartPos, throwEndPos, kinectToFieldScaled);           
-         ballThrow = false;       
-      }
-       
-
-    
-
-
-
+      
 
        //TODO: do we need this anymore
       counter2++;
@@ -1532,7 +1568,7 @@ void normalizePoseRotation(Pose pose) {
 }
 
 // draw the skeleton with the selected joints
-PVector evaluateSkeleton(int userId, int person)
+PVector evaluateSkeleton(int userId, int detectedPlayerCount)
 {
     Pose pose = new Pose();
 
@@ -1608,9 +1644,9 @@ PVector evaluateSkeleton(int userId, int person)
     //TODO: more than 2 players, different colors
     if (IS_DEBUG_MODE)
     {
-      if (person < PLAYER_COLORS.length) pg.stroke(PLAYER_COLORS[person].x,PLAYER_COLORS[person].y,PLAYER_COLORS[person].z,255);
+      if (detectedPlayerCount < PLAYER_COLORS.length) pg.stroke(PLAYER_COLORS[detectedPlayerCount].x,PLAYER_COLORS[detectedPlayerCount].y,PLAYER_COLORS[detectedPlayerCount].z,255);
     
-      warning[person] = -1; 
+      warning[detectedPlayerCount] = -1; 
  
       pg.strokeWeight(5);
       pg.line(jointNeck2D.x,jointNeck2D.y, jointLeftShoulder2D.x,jointLeftShoulder2D.y);
@@ -1629,41 +1665,41 @@ PVector evaluateSkeleton(int userId, int person)
       // TODO: ui: show the warnings in game mode ?!?
       if (jointNeck2D.x < 100) 
       {
-          warning[person] = 0;
+          warning[detectedPlayerCount] = 0;
       }
     
       if (jointNeck2D.x >  540) 
       {
-          warning[person] = 4;
+          warning[detectedPlayerCount] = 4;
       }
     
       if (jointNeck3D.z > 4000)
       {
-          warning[person] = 2;
+          warning[detectedPlayerCount] = 2;
         
           if (jointNeck2D.x < 100) 
           {
-              warning[person] = 1;
+              warning[detectedPlayerCount] = 1;
           }
         
           if (jointNeck2D.x > 540) 
           {
-              warning[person] = 3;
+              warning[detectedPlayerCount] = 3;
           }
       }
     
       if (jointNeck2D.z <  1500)
       {
-          warning[person] = 6;
+          warning[detectedPlayerCount] = 6;
         
           if (jointNeck2D.x < 100) 
           {
-              warning[person] = 7;
+              warning[detectedPlayerCount] = 7;
           }
         
           if (jointNeck2D.x > 540) 
           {
-              warning[person] = 5;
+              warning[detectedPlayerCount] = 5;
           }
       }
     }
@@ -1680,10 +1716,10 @@ PVector evaluateSkeleton(int userId, int person)
     actualHandPose.rightHandAbsolute.z = jointRightHand3D.z;
 
     // add the new hand pose to the ringbuffer for hand poses
-    ringbufferHand[person].addANewPose(actualHandPose);
+    ringbufferHand[detectedPlayerCount].addANewPose(actualHandPose);
     
     // the older pose
-    oldHandPose = ringbufferHand[person].getTheOlderPose();
+    oldHandPose = ringbufferHand[detectedPlayerCount].getTheOlderPose();
     
     if(oldHandPose == null) println("NO history");
     // ==== COPY ===
@@ -1692,7 +1728,7 @@ PVector evaluateSkeleton(int userId, int person)
     pose = normalizePose(pose);
     if (ROTATE_PLAYER) normalizePoseRotation(pose);    
     
-    ringbuffer[person].fillBuffer( pose );
+    ringbuffer[detectedPlayerCount].fillBuffer( pose );
     
  
     
