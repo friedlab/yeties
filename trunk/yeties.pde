@@ -16,7 +16,7 @@
 boolean autoPoseDetection = true;
 boolean useFullscreen = false;
 
-static boolean showDebugUI = true;
+static boolean IS_DEBUG_MODE = false;
 
 static int CHECK_SKELETON_COUNT = 6;
 static int PLAYER_COUNT = 3;
@@ -53,8 +53,7 @@ PImage kineticspace;
 boolean switchDisplay = false;
 boolean updateDisplay = true;
 int warning[] = new int[PLAYER_COUNT];
-
-// gesture recognition: 
+// which gesture buffer to show in the debug ui
 int displayCost = 1;
 
 // gesture recognition: 
@@ -104,9 +103,9 @@ int X = 10;
 
 ////////////////////////////////////
 // game logic
-PVector playerNecks[] = new PVector[PLAYER_COUNT];
-PVector playerActualHands[] = new PVector[PLAYER_COUNT];
-PVector playerOldHands[] = new PVector[PLAYER_COUNT];
+PVector remotePlayerNecks[] = new PVector[PLAYER_COUNT];
+PVector remotePlayerActualHands[] = new PVector[PLAYER_COUNT];
+PVector remotePlayerOldHands[] = new PVector[PLAYER_COUNT];
 
 //TODO: what about the remote players ?!?
 //PVector remotePlayerNecks[] = new PVector[PLAYER_COUNT];
@@ -119,6 +118,9 @@ static int PLAYER_MODUS_COUNT = 3;
 boolean ballThrow = false;
 PVector throwStartPos;
 PVector throwEndPos;
+
+static float HIT_DISTANCE = 0.6; // 60cm normalized shoulder width
+static float FRIGHTENED_DISTANCE = 1.2; // 
 
 ////////////////////////////////////
 // game ui
@@ -877,16 +879,19 @@ void setup()
     textFont(fontA32, 32);
  
     //TODO: ui stuff
-    if (showDebugUI)
+    if (IS_DEBUG_MODE)
     {
       background(0,0,0);
       stroke(0,0,255);
       strokeWeight(3);
       smooth();
       pg = createGraphics(context.depthWidth(), context.depthHeight(), P2D);
+      size(1170, 800, P3D);
+
     }
     else {
       // we are in game mode
+      pg = createGraphics(context.depthWidth(), context.depthHeight(), P2D);
       
       if (!useFullscreen)
       {
@@ -942,38 +947,38 @@ void oscEvent(OscMessage updateMessage) {
 
    for(int i = 0; i < PLAYER_COUNT; i++) {
      
-      playerNecks[i] = new PVector();
-      playerNecks[i].x = updateMessage.get(i*9+0).floatValue();
-      playerNecks[i].y = updateMessage.get(i*9+1).floatValue();
-      playerNecks[i].z = updateMessage.get(i*9+2).floatValue();
+      remotePlayerNecks[i] = new PVector();
+      remotePlayerNecks[i].x = updateMessage.get(i*9+0).floatValue();
+      remotePlayerNecks[i].y = updateMessage.get(i*9+1).floatValue();
+      remotePlayerNecks[i].z = updateMessage.get(i*9+2).floatValue();
 
 
-      playerOldHands[i] = new PVector();
-      playerOldHands[i].x = updateMessage.get(i*9+3).floatValue();
-      playerOldHands[i].y = updateMessage.get(i*9+4).floatValue();
-      playerOldHands[i].z = updateMessage.get(i*9+5).floatValue();
+      remotePlayerOldHands[i] = new PVector();
+      remotePlayerOldHands[i].x = updateMessage.get(i*9+3).floatValue();
+      remotePlayerOldHands[i].y = updateMessage.get(i*9+4).floatValue();
+      remotePlayerOldHands[i].z = updateMessage.get(i*9+5).floatValue();
 
 
-      playerActualHands[i] = new PVector();
-      playerActualHands[i].x = updateMessage.get(i*9+6).floatValue();
-      playerActualHands[i].y = updateMessage.get(i*9+7).floatValue();
-      playerActualHands[i].z = updateMessage.get(i*9+8).floatValue();
+      remotePlayerActualHands[i] = new PVector();
+      remotePlayerActualHands[i].x = updateMessage.get(i*9+6).floatValue();
+      remotePlayerActualHands[i].y = updateMessage.get(i*9+7).floatValue();
+      remotePlayerActualHands[i].z = updateMessage.get(i*9+8).floatValue();
      
    }
 
    for(int i = 0; i < PLAYER_COUNT; i++) {
      
-      if(playerNecks[i].x != 0) {
+      if(remotePlayerNecks[i].x != 0) {
        
         println("player " + i);
         println("\tneck: ");
-        println("\t" + playerNecks[i]);
+        println("\t" + remotePlayerNecks[i]);
         
         println("\told hand");
-        println("\t" + playerOldHands[i]);
+        println("\t" + remotePlayerOldHands[i]);
         
         println("\tactual hand");
-        println("\t" + playerActualHands[i]);
+        println("\t" + remotePlayerActualHands[i]);
 
       } else {
         //println("no information");
@@ -996,10 +1001,14 @@ void updateBalls()
 {
   for (Ball b : balls)
   {
-    b.pos.add(b.dir);
-   
+    // update ball position
+    b.pos.add(b.dir); // TODO: use game time
+    //
+    
+    // debug drawing
     line(b.pos.x, b.pos.y, b.pos.z, b.pos.x, 0, b.pos.z);
     
+    // draw ball
     pushMatrix();
     translate(b.pos.x, b.pos.y, b.pos.z);
     textureMode(NORMALIZED);
@@ -1013,6 +1022,7 @@ void updateBalls()
     popMatrix();
   }
 
+  // detect removable balls
   for (int i = 0; i < balls.size(); ++i)
   {
     if (isBrokenBall(balls.get(i)))
@@ -1020,8 +1030,28 @@ void updateBalls()
       balls.remove(i);
       --i;
     }
+    
   }
 }
+
+
+// checks all balls on remote players
+boolean isPlayerHit(PVector pos) {
+  for (int i=0; i < balls.size(); ++i) {
+    float distance = PVector.dist(pos , balls.get(i).pos);
+    
+    if (distance < HIT_DISTANCE) {
+      //OnRemotePlayerHit(i);
+      //TODO: if we had also an array of the local players...
+      return true;
+    } 
+    if (distance < FRIGHTENED_DISTANCE) {
+      //OnRemotePlayerFrigthened(i);
+    }
+  }
+  return false;
+}
+
 
 boolean isBrokenBall(Ball ball)
 {
@@ -1070,7 +1100,9 @@ void drawGameField()
     line(-2, 0, 4, -2, 0, -4);
     line(2, 0, 4, 2, 0, -4);
 		
-               
+    //TODO: lost popMatrix ? 
+    popMatrix();
+    
  		
 		
    
@@ -1295,14 +1327,13 @@ void drawDebug() {
 void draw()
 {
   strokeWeight(0);
-  background(bg); 
 
   // update the cam
     context.update();
   
     
 
-    if (showDebugUI)  
+    if (IS_DEBUG_MODE)  
     {
       pg.beginDraw();
       drawDebug();
@@ -1310,28 +1341,32 @@ void draw()
       return;
     }
     
+    
     //we are in game mode
-      pg.beginDraw();
+    background(bg); 
 
+    pg.beginDraw();
+
+    
       int  person = 0;
 
       drawGameField();
     
       // draw remote players ?!?
       // trigger ball on remote player throw detection / message
-      for (int i = 0; i < playerNecks.length; ++i) {
-        if(!vectorNullOrZero(playerNecks[i])) {
+      for (int i = 0; i < remotePlayerNecks.length; ++i) {
+        if(!vectorNullOrZero(remotePlayerNecks[i])) {
           PVector neck = new PVector();
-          otherKinectToFieldScaled.mult(playerNecks[i], neck);
+          otherKinectToFieldScaled.mult(remotePlayerNecks[i], neck);
           drawPlayer(neck, false);      
         }
       
-
-        if (!vectorNullOrZero(playerActualHands[i]) &&
-          !vectorNullOrZero(playerOldHands[i])) {
-          createBall(playerOldHands[i], playerActualHands[i], otherKinectToFieldScaled);
-          playerActualHands[i] = null;
-          playerOldHands[i] = null;
+        // remote throw detection
+        if (!vectorNullOrZero(remotePlayerActualHands[i]) &&
+          !vectorNullOrZero(remotePlayerOldHands[i])) {
+          createBall(remotePlayerOldHands[i], remotePlayerActualHands[i], otherKinectToFieldScaled);
+          remotePlayerActualHands[i] = null;
+          remotePlayerOldHands[i] = null;
         }
       }
     
@@ -1437,18 +1472,18 @@ void normalizePoseRotation(Pose pose) {
   }    
   // TODO compute back-facing vector (test sign )
   // negative x is with face to the kinect device,   
-  println(" shoulders vektor "+leftToRight + " angle "+angle + " rads "+ fradians); 
+//  println(" shoulders vektor "+leftToRight + " angle "+angle + " rads "+ fradians); 
 
 
 
   // rotate all bones by this angle, so that the recognisable     
   float fcos = cos(-fradians);
   float fsin = sin(-fradians);
-
+/*
   println(" left shoulder before " +   pose.jointLeftShoulderRelative.x + " : " +   pose.jointLeftShoulderRelative.z+ "; "+
                                   pose.jointRightShoulderRelative.x    + " : " +   pose.jointRightShoulderRelative.z + "; ");
                                   
-                                  
+  */                                
   PVector leftSR = new PVector();
   leftSR.x = fcos *     pose.jointLeftShoulderRelative.x  - fsin *     pose.jointLeftShoulderRelative.z;
   leftSR.z = fsin *     pose.jointLeftShoulderRelative.x  + fcos *     pose.jointLeftShoulderRelative.z;
@@ -1473,10 +1508,10 @@ void normalizePoseRotation(Pose pose) {
   rightHR.x = fcos * pose.jointRightHandRelative.x  - fsin * pose.jointRightHandRelative.z;
   rightHR.z = fsin * pose.jointRightHandRelative.x  + fcos * pose.jointRightHandRelative.z;
 
-
+/*
   println(" left shoulder after " +  leftSR.x + " : " +   leftSR.z+ "; "+
                                   rightSR.x    + " : " +   rightSR.z + "; ");
-
+*/
   pose.jointLeftShoulderRelative.x = leftSR.x;
   pose.jointLeftShoulderRelative.z = leftSR.z;
   
@@ -1573,7 +1608,7 @@ PVector evaluateSkeleton(int userId, int person)
 
     
     //TODO: more than 2 players, different colors
-    if (showDebugUI)
+    if (IS_DEBUG_MODE)
     {
       if (person < PLAYER_COLORS.length) pg.stroke(PLAYER_COLORS[person].x,PLAYER_COLORS[person].y,PLAYER_COLORS[person].z,255);
     
@@ -1870,7 +1905,7 @@ void loadData(int moveID) {
 void keyPressed()
 {
   // key interaction only in debug mode
-  if (!showDebugUI) {
+  if (!IS_DEBUG_MODE) {
     return;
   }
   // check for active users
@@ -1917,8 +1952,8 @@ void keyPressed()
     break;
 /* no dynamic switching is supported
   case 'u':
-    showDebugUI = ! showDebugUI;
-    println(" show debug "+showDebugUI);
+    IS_DEBUG_MODE = ! IS_DEBUG_MODE;
+    println(" show debug "+IS_DEBUG_MODE);
     break;
     */
   case 'd':
