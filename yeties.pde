@@ -16,13 +16,13 @@
 boolean autoPoseDetection = true;
 boolean useFullscreen = false;
 
+static boolean showDebugUI = true;
+
 static int CHECK_SKELETON_COUNT = 6;
 static int PLAYER_COUNT = 3;
 static boolean ROTATE_PLAYER = true;
 static boolean ROTATE_POSE_ON_LOAD = false;
 static boolean NORMALIZE_POSE_ON_LOAD = true;
-
-static boolean showDebugUI = true;
 
 // ============================================================
 
@@ -107,6 +107,9 @@ int X = 10;
 PVector playerNecks[] = new PVector[PLAYER_COUNT];
 PVector playerActualHands[] = new PVector[PLAYER_COUNT];
 PVector playerOldHands[] = new PVector[PLAYER_COUNT];
+
+//TODO: what about the remote players ?!?
+//PVector remotePlayerNecks[] = new PVector[PLAYER_COUNT];
 
 
 // removed: is in PLAYER_COUNT: int spielerzahl = 3;
@@ -1140,125 +1143,52 @@ void createBall(PVector throwStartPos, PVector throwEndPos, PMatrix3D transform)
                   balls.add(ball);    
 }
 
-void draw()
-{
-  strokeWeight(0);
-  background(bg); 
-
-  // update the cam
-    context.update();
-  
-    pg.beginDraw();
-
-    //TODO: ui stuff
-
-    if (showDebugUI)  
-    {
-      // draw depthImageMap
-      pg.image(context.depthImage(),0,0);
-
-      ringbuffer[0].display();
+void computeCosts(int person) {
+  //TODO: this must be also in game mode        
+  // current person count
+  for (int p = 0; p<person; p++) {
+    for (int i = 0; i < MAX_GESTURE_COUNT; i++) {
+      // compute cost
+      if (!empty[i]) {
+        costLast[p][i] = cost[p][i];
+        cost[p][i] = ringbuffer[p].pathcost(i);
+        cost[p][i] = (log(cost[p][i]-1.0) - 5.5)/2.0;
+        // println("cost(" + i + "): " + cost);
+      }
     }
-    
-    // process the skeleton if it's available
+  }
+}
+
+void drawDebug() {
+  
     foundSkeleton = false;
-  int  person = 0;
+    int  person = 0;
 
-    if (!showDebugUI)
-    { 
-      drawGameField();
-    }
-  
-    for (int i = 0; i < playerNecks.length; ++i)
-    {
-      if (!showDebugUI)
-      {
-        if(!vectorNullOrZero(playerNecks[i]))      
-        {
-          PVector neck = new PVector();
-          otherKinectToFieldScaled.mult(playerNecks[i], neck);
-          drawPlayer(neck, false);      
-        }
-      }
+    // draw depthImageMap
+    pg.image(context.depthImage(),0,0);
+    // draw ringbuffer
+    ringbuffer[0].display();
 
-      if (!vectorNullOrZero(playerActualHands[i]) &&
-          !vectorNullOrZero(playerOldHands[i]))
-      {
-        createBall(playerOldHands[i], playerActualHands[i], otherKinectToFieldScaled);
-        playerActualHands[i] = null;
-        playerOldHands[i] = null;
-      }
-    }
-    
-    for (int i = 1; i< CHECK_SKELETON_COUNT; i++)
-    {
-          //TODO more than 2 players
-  
-        if ( (context.isTrackingSkeleton(i)) && (person < PLAYER_COUNT) )
-        {
-            
+    // process the skeleton if it's available
+    for (int i = 1; i< CHECK_SKELETON_COUNT; i++) {
+      if ( (context.isTrackingSkeleton(i)) && (person < PLAYER_COUNT) ) {
             PVector neck = evaluateSkeleton(i,person);
-            
-            //println(neck);
-           
-            if (!showDebugUI) 
-            {
-              
-              kinectToFieldScaled.mult(neck, neck);
-                
-              //translate(neck.x * 0.001f, neck.y * 0.001f, -neck.z * 0.001f);
-	      //TODO: ui stuff
-              drawPlayer(neck, true);
-         
-                
-           }
-              //TODO: ball erzeugen nur bei abwurf
-           if (ballThrow)
-           {
-               createBall(throwStartPos, throwEndPos, kinectToFieldScaled);           
-               ballThrow = false;       
-           }
-           foundSkeleton = true;
-           person++;
-           
-        }
-    }
-    if (!showDebugUI) 
-    {
-      updateBalls();
-       
-      counter2++;
-      counter2 %= 25;
-      if (counter2 == 0)
-      {
-        /* send OSC message */
-        OscMessage myMessage = new OscMessage("/status");
-        if (foundSkeleton) myMessage.add("tracking ...");
-        if (!foundSkeleton) myMessage.add("looking for pose ...");
-        oscP5.send(myMessage, myRemoteLocation); 
+            foundSkeleton = true;
+            person++;
       }
     }
-    pg.endDraw();
-    
-//    popMatrix();
-
-    if (showDebugUI)
-    {
-
-      if (switchDisplay)
-      {
-        image(pg, 0, 0);
-      }
-      else
-      {
+      
+    if (switchDisplay) {
+      image(pg, 0, 0);
+    } else {
         pushMatrix();
         scale(-1.0, 1.0);
         image(pg,-pg.width,0);
         popMatrix();
-      }
+    }
   
-      if (!foundSkeleton) 
-      {
+    // no skeleton found
+    if (!foundSkeleton)  {
         stroke(0,0,0);
         fill(0,0,0);
         rect(context.depthWidth(), 0, 400, 485);
@@ -1269,55 +1199,42 @@ void draw()
         textAlign(CENTER);
         text("Please register user!", context.depthWidth() / 2, 40);
         image(shapeOfUser, 0, 0);
-      }
-      //TODO more than 2 players
-      else 
-      {
-        for (int i=0; i < PLAYER_COUNT; i++)
-        {
-          if ((warning[i] >= 0) )
-          {
+    } else { // show player warning messages
+        for (int i=0; i < PLAYER_COUNT; i++) {
+          if ((warning[i] >= 0) ) {
             image(warnings[i][warning[i]],context.depthWidth()/2-100, context.depthHeight()/2 - 50);
           }
-          
-        }
-      }
+       }
+    }
 
-      if (updateDisplay)
-      {
+    // if the display has changed, update only on demand
+    if (updateDisplay) {
           updateDisplay = false;
         
-          if (switchDisplay)
-          {
-              for (int i = 0; i<=4; i++)
-              {
-                  image(foto[i], i * (context.depthWidth() + 400) / 5 + i*5, context.depthHeight() + 15, (context.depthWidth() + 400) / 5, 130);
-                  image(foto[(i+5)], i * (context.depthWidth() + 400) / 5 + i*5, context.depthHeight() + 170, (context.depthWidth() + 400) / 5, 130);
+          int ghc = (MAX_GESTURE_COUNT/2);
+          if (switchDisplay) {
+              for (int i = 0; i< ghc; i++) {
+                  image(foto[i], i * (context.depthWidth() + 400) / ghc + i*ghc, context.depthHeight() + 15, (context.depthWidth() + 400) / ghc, 130);
+                  image(foto[(i+ghc)], i * (context.depthWidth() + 400) / ghc + i*5, context.depthHeight() + 170, (context.depthWidth() + 400) / ghc, 130);
               }
-          }
-          else
-          {
-              for (int i = 0; i<=4; i++)
-              {
+          } else {
+              for (int i = 0; i<ghc; i++) {
                   pushMatrix();
                   scale(-1.0, 1.0);
-                  image(foto[i], -(i+1) * (context.depthWidth() + 400) / 5 - i*5, context.depthHeight() + 15, (context.depthWidth() + 400) / 5, 130);
-                  image(foto[(i+5)], -(i+1) * (context.depthWidth() + 400) / 5 - i*5, context.depthHeight() + 170, (context.depthWidth() + 400) / 5, 130);
+                  image(foto[i], -(i+1) * (context.depthWidth() + 400) / ghc - i*ghc, context.depthHeight() + 15, (context.depthWidth() + 400) / ghc, 130);
+                  image(foto[(i+5)], -(i+1) * (context.depthWidth() + 400) / ghc - i*ghc, context.depthHeight() + 170, (context.depthWidth() + 400) / ghc, 130);
                   popMatrix();
               }
           }
           
-          for (int i = 0; i<=4; i++)
-          {
-              if (empty[i])
-              {
+          for (int i = 0; i<=4; i++) {
+              if (empty[i]) {
                   pushMatrix();
                   scale(-1.0, 1.0);
                   image(foto[i], -(i+1) * (context.depthWidth() + 400) / 5 - i*5, context.depthHeight() + 15, (context.depthWidth() + 400) / 5, 130);
                   popMatrix();
               }
-              if (empty[i+5])
-              {
+              if (empty[i+5]) {
                   pushMatrix();
                   scale(-1.0, 1.0);
                   image(foto[(i+5)], -(i+1) * (context.depthWidth() + 400) / 5 - i*5, context.depthHeight() + 170, (context.depthWidth() + 400) / 5, 130);
@@ -1328,78 +1245,171 @@ void draw()
           textFont(fontA12, 16);
           fill(255,255,255);
           textAlign(CENTER);
-          for (int i = 0; i<=4; i++)
-          {
+          for (int i = 0; i<=4; i++) {
               text(i, i * (context.depthWidth() + 400) / 5 + i*5 + 12, context.depthHeight() + 32);
               // image(foto[i], i * (context.depthWidth() + 400) / 5 + i*5, context.depthHeight() + 15, (context.depthWidth() + 400) / 5, 130);
               text((i+5), i * (context.depthWidth() + 400) / 5 + i*5 + 12, context.depthHeight() + 187);
               // image(foto[(i+5)], i * (context.depthWidth() + 400) / 5 + i*5, context.depthHeight() + 170, (context.depthWidth() + 400) / 5, 130);
           }                
       }
-    }
+    
     
     // evaluate and draw DTW
     if (foundSkeleton)
     {
-     	//TODO:ui stuff
-        if (showDebugUI)
-        {
           noStroke();             
           fill(0,0,0);
           rect(0, context.depthHeight() + 145, 1070, 20);
           rect(0, context.depthHeight() + 300, 1070, 20);
-        }
-        
-        // current person count
-        for (int p = 0; p<person; p++)
-        {
-            for (int i = 0; i <= 9; i++)
-            {
-                if (!empty[i])
-                {
-                    costLast[p][i] = cost[p][i];
-                    cost[p][i] = ringbuffer[p].pathcost(i);
-                    cost[p][i] = (log(cost[p][i]-1.0) - 5.5)/2.0;
-                    // println("cost(" + i + "): " + cost);
+    }
+    
+    computeCosts(person);
+          
+    //TODO: this must be also in game mode        
+    // current person count
+    for (int p = 0; p<person; p++) {
+        for (int i = 0; i < MAX_GESTURE_COUNT; i++) {
+            // compute cost
+            if (!empty[i]) {
                     
-                    if (showDebugUI) 
-                    {            
-                      fill(255,0,0);
-                      if (p == 1) fill(0,0,255);
-                      if ( cost[p][i] <= 0.25 )
-                      {
-                          fill(0,255,0);
-                      }
+                fill(255,0,0);
+                if (p == 1) fill(0,0,255);
+                if ( cost[p][i] <= 0.25 ) fill(0,255,0);
+                    
             
                     
-                      if ( ( cost[p][i] > 0.25 ) && ( cost[p][i] < 0.35 ) )
-                      {
-                        float normalized = 10.0 * (cost[p][i] - 0.25);
-                        fill(255 * normalized,255 * (1.0-normalized),0);
-                        if (p == 1) fill(0,255 * (1.0-normalized),255 * normalized); 
-                      }
-                                    
-                      if (i < 5) rect(i * (context.depthWidth() + 400) / 5 + i*5, context.depthHeight() + 145 + 10*p, min(1.0, max(0.01, 1.0-cost[p][i])) * ((context.depthWidth() + 400) / 5), 10);
-                      if (i >= 5) rect((i-5) * (context.depthWidth() + 400) / 5 + (i-5)*5, context.depthHeight() + 300 + 10*p, min(1.0, max(0.01, 1.0-cost[p][i])) * ((context.depthWidth() + 400) / 5), 10);
-                    }
-                    
-                    if ( ( cost[p][i] < 0.3 ) && ( costLast[p][i] >= 0.3 ) )
-                    {
-                      ballThrow = true;
-                    
-                      println("Throw!");
-                  
-                    
-                      PVector lHA = actualHandPose.leftHandAbsolute;
-                      throwEndPos = new PVector(lHA.x, lHA.y, lHA.z);
-                      PVector olHA = oldHandPose.leftHandAbsolute;
-                      throwStartPos = new PVector(olHA.x, olHA.y, olHA.z);
-                                        
-                    }
+                if ( ( cost[p][i] > 0.25 ) && ( cost[p][i] < 0.35 ) ) {
+                    float normalized = 10.0 * (cost[p][i] - 0.25);
+                    fill(255 * normalized,255 * (1.0-normalized),0);
+                    if (p == 1) fill(0,255 * (1.0-normalized),255 * normalized); 
                 }
+                                    
+                if (i < 5) rect(i * (context.depthWidth() + 400) / 5 + i*5, context.depthHeight() + 145 + 10*p, min(1.0, max(0.01, 1.0-cost[p][i])) * ((context.depthWidth() + 400) / 5), 10);
+                if (i >= 5) rect((i-5) * (context.depthWidth() + 400) / 5 + (i-5)*5, context.depthHeight() + 300 + 10*p, min(1.0, max(0.01, 1.0-cost[p][i])) * ((context.depthWidth() + 400) / 5), 10);
             }
         }
     }
+
+}
+    
+void draw()
+{
+  strokeWeight(0);
+  background(bg); 
+
+  // update the cam
+    context.update();
+  
+    
+
+    if (showDebugUI)  
+    {
+      pg.beginDraw();
+      drawDebug();
+      pg.endDraw();
+      return;
+    }
+    
+    //we are in game mode
+      pg.beginDraw();
+
+      int  person = 0;
+
+      drawGameField();
+    
+      // draw remote players ?!?
+      // trigger ball on remote player throw detection / message
+      for (int i = 0; i < playerNecks.length; ++i) {
+        if(!vectorNullOrZero(playerNecks[i])) {
+          PVector neck = new PVector();
+          otherKinectToFieldScaled.mult(playerNecks[i], neck);
+          drawPlayer(neck, false);      
+        }
+      
+
+        if (!vectorNullOrZero(playerActualHands[i]) &&
+          !vectorNullOrZero(playerOldHands[i])) {
+          createBall(playerOldHands[i], playerActualHands[i], otherKinectToFieldScaled);
+          playerActualHands[i] = null;
+          playerOldHands[i] = null;
+        }
+      }
+    
+  
+    
+      // detect and draw local players
+      for (int i = 1; i< CHECK_SKELETON_COUNT; i++) {
+        if ( (context.isTrackingSkeleton(i)) && (person < PLAYER_COUNT) ) {
+            PVector neck = evaluateSkeleton(i,person);
+
+            //println(neck);
+            kinectToFieldScaled.mult(neck, neck);
+                
+            //translate(neck.x * 0.001f, neck.y * 0.001f, -neck.z * 0.001f);
+           //TODO: ui stuff
+            drawPlayer(neck, true);
+      
+            person++;
+           
+        }
+      }
+    
+      computeCosts(person); // updates only if person > 0
+          
+          //TODO: this must be also in game mode        
+          // current person count
+      for (int p = 0; p<person; p++) {
+        for (int i = 0; i < MAX_GESTURE_COUNT; i++) {
+           // compute cost
+           if (!empty[i]) {
+             if ( ( cost[p][i] < 0.3 ) && ( costLast[p][i] >= 0.3 ) ) {
+               ballThrow = true;
+               println("Throw!");
+                    
+               PVector lHA = actualHandPose.leftHandAbsolute;
+               throwEndPos = new PVector(lHA.x, lHA.y, lHA.z);
+               PVector olHA = oldHandPose.leftHandAbsolute;
+               throwStartPos = new PVector(olHA.x, olHA.y, olHA.z);
+                                        
+             }
+           }
+         }
+       }  
+      
+  
+      updateBalls();
+
+      //TODO: ball erzeugen nur bei abwurf
+      if (ballThrow)
+      {
+         createBall(throwStartPos, throwEndPos, kinectToFieldScaled);           
+         ballThrow = false;       
+      }
+       
+
+    
+
+
+
+
+       //TODO: do we need this anymore
+      counter2++;
+      counter2 %= 25;
+      if (counter2 == 0)
+      {
+        /* send OSC message */
+        OscMessage myMessage = new OscMessage("/status");
+        if (foundSkeleton) myMessage.add("tracking ...");
+        if (!foundSkeleton) myMessage.add("looking for pose ...");
+        oscP5.send(myMessage, myRemoteLocation); 
+      }
+    
+    pg.endDraw();
+    
+//    popMatrix();
+
+    
+    
 }
 
 // all the poses will be rotatet. need neck-relative position (as origin)
@@ -1563,13 +1573,12 @@ PVector evaluateSkeleton(int userId, int person)
 
     
     //TODO: more than 2 players, different colors
-    if (person < PLAYER_COLORS.length) pg.stroke(PLAYER_COLORS[person].x,PLAYER_COLORS[person].y,PLAYER_COLORS[person].z,255);
-    
-    warning[person] = -1; 
-  
-	//TODO: ui stuff
     if (showDebugUI)
     {
+      if (person < PLAYER_COLORS.length) pg.stroke(PLAYER_COLORS[person].x,PLAYER_COLORS[person].y,PLAYER_COLORS[person].z,255);
+    
+      warning[person] = -1; 
+ 
       pg.strokeWeight(5);
       pg.line(jointNeck2D.x,jointNeck2D.y, jointLeftShoulder2D.x,jointLeftShoulder2D.y);
       pg.line(jointLeftShoulder2D.x,jointLeftShoulder2D.y, jointLeftElbow2D.x,jointLeftElbow2D.y);
@@ -1648,21 +1657,11 @@ PVector evaluateSkeleton(int userId, int person)
     
     // add new pose to ringbuffer
     pose = normalizePose(pose);
-	if (ROTATE_PLAYER) normalizePoseRotation(pose);    
+    if (ROTATE_PLAYER) normalizePoseRotation(pose);    
     
-	ringbuffer[person].fillBuffer( pose );
+    ringbuffer[person].fillBuffer( pose );
     
-    // the distance is called only if the throw gesture
-    if(foundSkeleton){
-    //  println("DISTANCE: ");
-    //  println(dist(actualHandPose.leftHandAbsolute.x,
-//            actualHandPose.leftHandAbsolute.y,
-//            actualHandPose.leftHandAbsolute.z,
-//            oldHandPose.leftHandAbsolute.x,
-//            oldHandPose.leftHandAbsolute.y,
-//            oldHandPose.leftHandAbsolute.z));
-
-    }
+ 
     
     return jointNeck3D;
 }
