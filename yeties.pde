@@ -4,7 +4,8 @@
 * prog:  Matthias Wölfel,
 *        Elke Müller,
 *        Jan Felix Reuter,
-         Thomas Schenker
+         Thomas Schenker,
+		 Alexander Liebrich
 *        and others (need_to_be_added)
 * date:  04/12/2011 (m/d/y)
 * ver:   0.1
@@ -28,16 +29,26 @@ SimpleOpenNI context;
 OscP5 oscP5;
 NetAddress myRemoteLocation;
 
-boolean showDebugUI = false;
+// settings
+boolean showDebugUI = true;
 //TODO: more than 2 players
-int PLAYER_COUNT = 4;
+static int CHECK_SKELETON_COUNT = 6;
+static int PLAYER_COUNT = 4;
+static boolean ROTATE_PLAYER = true;
+static boolean ROTATE_POSE_ON_LOAD = false;
+static boolean NORMALIZE_POSE_ON_LOAD = true;
+
+// debug UI
 PVector[] PLAYER_COLORS = new PVector[PLAYER_COUNT];
 
+// gesture recognition: 
 int displayCost = 1;
 
+// game logic
 int spielerzahl = 3;
 int modus = 3;
 
+// gesture recognition: 
 int N = 25;
 int M = 2*N;
 
@@ -45,20 +56,24 @@ int counter = 0;
 int counter2 = 0;
 int counterEvent = 0;
 
-int person = 0; // current person
+//removed, is only a local var: int person = 0; // current person
 
+// game logic
 PVector playerNecks[] = new PVector[4];
 PVector playerActualHands[] = new PVector[4];
 PVector playerOldHands[] = new PVector[4];
 
+// game ui
 PImage[][] playas = new PImage[spielerzahl][modus];
 PImage bg;
 
-// Relative Array of objects
+// gesture recognition: Relative Array of objects
 Pose[][] grid;
 Pose[][] move;
 
 PGraphics pg;
+
+// debug UI
 PFont fontA32;
 PFont fontA12;
 PImage[] foto;
@@ -66,16 +81,19 @@ PImage[][] warnings;
 PImage shapeOfUser;  
 PImage kineticspace;
 
+// gesture recognition
 boolean foundSkeleton = false;
+// debug UI
 boolean switchDisplay = false;
 boolean updateDisplay = true;
 
-int steps[] = new int[10];
-float speed[] = new float[10];
+static int MAX_GESTURE_COUNT = 10;
+int steps[] = new int[MAX_GESTURE_COUNT];
+float speed[] = new float[MAX_GESTURE_COUNT];
 //TODO: more than 2 players
-float cost[][] = new float[PLAYER_COUNT][10]; //TODO: more than 2 players
-float costLast[][] = new float[PLAYER_COUNT][10]; //TODO: more than 2 players
-boolean empty[] = new boolean[10];
+float cost[][] = new float[PLAYER_COUNT][MAX_GESTURE_COUNT]; //TODO: more than 2 players
+float costLast[][] = new float[PLAYER_COUNT][MAX_GESTURE_COUNT]; //TODO: more than 2 players
+boolean empty[] = new boolean[MAX_GESTURE_COUNT];
 
 Data data;
 RingBuffer[] ringbuffer;
@@ -97,6 +115,8 @@ HandPoseAbsolute oldHandPose = new HandPoseAbsolute();
 int X = 10;
 // ==== COPY ===
 
+/////////////////////
+// debug UI
 int warning[] = new int[PLAYER_COUNT];
 
 // define the pose object
@@ -104,6 +124,8 @@ int warning[] = new int[PLAYER_COUNT];
 // @author: LHA
 // a Pose contains many points
 // in this case only 6 points are relevant
+
+// game UI
 
 float kinectHeight = 0.5f;
 float kinectDistance = 0.2f;
@@ -235,8 +257,8 @@ class RingBuffer
 {
     Pose[] poseArray;
     int  startOfBuffer = 0;
-    Float d[][][] = new Float[10][N][M];
-    int P[][][] = new int[10][N][M];
+    Float d[][][] = new Float[MAX_GESTURE_COUNT][N][M];
+    int P[][][] = new int[MAX_GESTURE_COUNT][N][M];
     Float D[][] = new Float[N][M];
   
     // constructor
@@ -321,42 +343,58 @@ class RingBuffer
   
     float cost(int moveID, int j, int i) 
     {
-        // part to adjust between left and right arm
-		// left arm only set value to -1.0
-		// right arm only set value to 1.0
-		// both ams equally set value to 0.0
-		// give more weight to the right arm you could use anysthing between 0.0 and 1.0
-		// give more weight to the left arm you could use anysthing between -1.0 and 0.0
-		
-	float weight_left_or_right = 0.0;
-	
-	if (weight_left_or_right > 1.0) weight_left_or_right = 1.0;
-	if (weight_left_or_right < -1.0) weight_left_or_right = -1.0;
-		
-	float weight_left = 1.0 - weight_left_or_right;
-	float weight_right = 1.0 + weight_left_or_right;
-		
-	float mse = 0.0;
-        
-        mse += weight_left * sqrt( pow((move[moveID][j].jointLeftShoulderRelative.x - poseArray[i].jointLeftShoulderRelative.x),2) 
-                   + pow((move[moveID][j].jointLeftShoulderRelative.y - poseArray[i].jointLeftShoulderRelative.y),2)
-                   + pow((move[moveID][j].jointLeftShoulderRelative.z - poseArray[i].jointLeftShoulderRelative.z),2) );
-        mse += weight_left * sqrt( pow((move[moveID][j].jointLeftElbowRelative.x - poseArray[i].jointLeftElbowRelative.x),2) 
-                   + pow((move[moveID][j].jointLeftElbowRelative.y - poseArray[i].jointLeftElbowRelative.y),2)
-                   + pow((move[moveID][j].jointLeftElbowRelative.z - poseArray[i].jointLeftElbowRelative.z),2) );
-        mse += weight_left * sqrt( pow((move[moveID][j].jointLeftHandRelative.x - poseArray[i].jointLeftHandRelative.x),2) 
-                   + pow((move[moveID][j].jointLeftHandRelative.y - poseArray[i].jointLeftHandRelative.y),2)
-                   + pow((move[moveID][j].jointLeftHandRelative.z - poseArray[i].jointLeftHandRelative.z),2) );
-        mse += weight_right * sqrt( pow((move[moveID][j].jointRightShoulderRelative.x - poseArray[i].jointRightShoulderRelative.x),2) 
-                   + pow((move[moveID][j].jointRightShoulderRelative.y - poseArray[i].jointRightShoulderRelative.y),2)
-                   + pow((move[moveID][j].jointRightShoulderRelative.z - poseArray[i].jointRightShoulderRelative.z),2) );
-        mse += weight_right * sqrt( pow((move[moveID][j].jointRightElbowRelative.x - poseArray[i].jointRightElbowRelative.x),2) 
-                   + pow((move[moveID][j].jointRightElbowRelative.y - poseArray[i].jointRightElbowRelative.y),2)
-                   + pow((move[moveID][j].jointRightElbowRelative.z - poseArray[i].jointRightElbowRelative.z),2) );
-        mse += weight_right * sqrt( pow((move[moveID][j].jointRightHandRelative.x - poseArray[i].jointRightHandRelative.x),2) 
-                   + pow((move[moveID][j].jointRightHandRelative.y - poseArray[i].jointRightHandRelative.y),2)
-                   + pow((move[moveID][j].jointRightHandRelative.z - poseArray[i].jointRightHandRelative.z),2) );
- 
+  // part to adjust between left and right arm
+    // left arm only set value to -1.0
+    // right arm only set value to 1.0
+    // both ams equally set value to 0.0
+    // give more weight to the right arm you could use anysthing between 0.0 and 1.0
+    // give more weight to the left arm you could use anysthing between -1.0 and 0.0
+
+    float weight_left_or_right = 0.0;
+
+
+    // === COPY ===
+    // @author: LHA
+    // if it is the left hand throw --> concentration of the left side
+    if ((moveID>=0)&&(moveID<=4)) {
+      weight_left_or_right = 1.0;
+    }
+    // if it is the right hand throw --> concentration of the right side
+    if ((moveID>=5)&&(moveID<=9)) {
+      weight_left_or_right = -1.0;
+    }
+    // === COPY ===
+
+    if (weight_left_or_right > 1.0) weight_left_or_right = 1.0;
+    if (weight_left_or_right < -1.0) weight_left_or_right = -1.0;
+
+    float weight_left = 1.0 - weight_left_or_right;
+    float weight_right = 1.0 + weight_left_or_right;
+
+    float mse = 0.0;
+
+    float weight_x = 0.5  * 0.15;
+    float weight_y = 0.75 * 0.15;
+    float weight_z = 1.0  * 0.15;
+
+    mse += weight_left * sqrt( weight_x * pow((move[moveID][j].jointLeftShoulderRelative.x - poseArray[i].jointLeftShoulderRelative.x), 2) 
+      + weight_y * pow((move[moveID][j].jointLeftShoulderRelative.y - poseArray[i].jointLeftShoulderRelative.y), 2)
+      + weight_z * pow((move[moveID][j].jointLeftShoulderRelative.z - poseArray[i].jointLeftShoulderRelative.z), 2) );
+    mse += weight_left * sqrt( weight_x * pow((move[moveID][j].jointLeftElbowRelative.x - poseArray[i].jointLeftElbowRelative.x), 2) 
+      + weight_y * pow((move[moveID][j].jointLeftElbowRelative.y - poseArray[i].jointLeftElbowRelative.y), 2)
+      + weight_z * pow((move[moveID][j].jointLeftElbowRelative.z - poseArray[i].jointLeftElbowRelative.z), 2) );
+    mse += weight_left * sqrt( weight_x * pow((move[moveID][j].jointLeftHandRelative.x - poseArray[i].jointLeftHandRelative.x), 2) 
+      + weight_y * pow((move[moveID][j].jointLeftHandRelative.y - poseArray[i].jointLeftHandRelative.y), 2)
+      + weight_z * pow((move[moveID][j].jointLeftHandRelative.z - poseArray[i].jointLeftHandRelative.z), 2) );
+    mse += weight_right * sqrt( weight_x * pow((move[moveID][j].jointRightShoulderRelative.x - poseArray[i].jointRightShoulderRelative.x), 2) 
+      + weight_y * pow((move[moveID][j].jointRightShoulderRelative.y - poseArray[i].jointRightShoulderRelative.y), 2)
+      + weight_z * pow((move[moveID][j].jointRightShoulderRelative.z - poseArray[i].jointRightShoulderRelative.z), 2) );
+    mse += weight_right * sqrt( weight_x * pow((move[moveID][j].jointRightElbowRelative.x - poseArray[i].jointRightElbowRelative.x), 2) 
+      + weight_y * pow((move[moveID][j].jointRightElbowRelative.y - poseArray[i].jointRightElbowRelative.y), 2)
+      + weight_z * pow((move[moveID][j].jointRightElbowRelative.z - poseArray[i].jointRightElbowRelative.z), 2) );
+    mse += weight_right * sqrt( weight_x * pow((move[moveID][j].jointRightHandRelative.x - poseArray[i].jointRightHandRelative.x), 2) 
+      + weight_y * pow((move[moveID][j].jointRightHandRelative.y - poseArray[i].jointRightHandRelative.y), 2)
+      + weight_z * pow((move[moveID][j].jointRightHandRelative.z - poseArray[i].jointRightHandRelative.z), 2) );
         return mse;
     }
 	
@@ -908,7 +946,7 @@ void oscEvent(OscMessage updateMessage) {
     return;
   }
 
-   for(int i = 0; i < 4; i++) {
+   for(int i = 0; i < PLAYER_COUNT; i++) {
      
       playerNecks[i] = new PVector();
       playerNecks[i].x = updateMessage.get(i*9+0).floatValue();
@@ -929,7 +967,7 @@ void oscEvent(OscMessage updateMessage) {
      
    }
 
-   for(int i = 0; i < 4; i++) {
+   for(int i = 0; i < PLAYER_COUNT; i++) {
      
       if(playerNecks[i].x != 0) {
        
@@ -998,7 +1036,7 @@ boolean isBrokenBall(Ball ball)
             ball.pos.y >= 3);
 }
 
-static int CHECK_SKELETON_COUNT = 6;
+// game ui
 float screenWidthMeters = 4;
 
 void drawGameField()
@@ -1133,7 +1171,7 @@ void draw()
     
     // process the skeleton if it's available
     foundSkeleton = false;
-    person = 0;
+  int  person = 0;
 
     if (!showDebugUI)
     { 
@@ -1168,7 +1206,7 @@ void draw()
         if ( (context.isTrackingSkeleton(i)) && (person < PLAYER_COUNT) )
         {
             
-            PVector neck = evaluateSkeleton(i);
+            PVector neck = evaluateSkeleton(i,person);
             
             //println(neck);
            
@@ -1211,7 +1249,7 @@ void draw()
     }
     pg.endDraw();
     
-    popMatrix();
+//    popMatrix();
 
     if (showDebugUI)
     {
@@ -1373,14 +1411,99 @@ void draw()
     }
 }
 
+// all the poses will be rotatet. need neck-relative position (as origin)
+void normalizePoseRotation(Pose pose) {
+
+  // get vector between shoulders and computer the normal in the middle of the [strecke]
+  // only 2d vector, as angle between only computes one angle (x,y component)
+  PVector leftToRight = new PVector();
+  leftToRight.x = pose.jointRightShoulderRelative.x - pose.jointLeftShoulderRelative.x;
+  leftToRight.y = pose.jointRightShoulderRelative.z - pose.jointLeftShoulderRelative.z;
+
+  // normalize
+  //leftToRight.normalize();
+  // the orientation in the view from the kinect sensor
+  PVector facingV = new PVector(1, 0); //use the normal to the z-direction (facing of the k.sensor) //0,1);
+  // 0 -> front face to sensor face
+  // 90 -> turned front to right
+  // -90 -> turned front to left
+  float fradians = PVector.angleBetween(leftToRight, facingV);
+  float angle = degrees( fradians );
+
+  if (leftToRight.y > 0){
+     //angle = -angle;
+     //fradians = -fradians;
+  }    
+  // TODO compute back-facing vector (test sign )
+  // negative x is with face to the kinect device,   
+  println(" shoulders vektor "+leftToRight + " angle "+angle + " rads "+ fradians); 
+
+
+
+  // rotate all bones by this angle, so that the recognisable     
+  float fcos = cos(-fradians);
+  float fsin = sin(-fradians);
+
+  println(" left shoulder before " +   pose.jointLeftShoulderRelative.x + " : " +   pose.jointLeftShoulderRelative.z+ "; "+
+                                  pose.jointRightShoulderRelative.x    + " : " +   pose.jointRightShoulderRelative.z + "; ");
+                                  
+                                  
+  PVector leftSR = new PVector();
+  leftSR.x = fcos *     pose.jointLeftShoulderRelative.x  - fsin *     pose.jointLeftShoulderRelative.z;
+  leftSR.z = fsin *     pose.jointLeftShoulderRelative.x  + fcos *     pose.jointLeftShoulderRelative.z;
+
+  PVector leftER = new PVector();
+  leftER.x = fcos * pose.jointLeftElbowRelative.x  - fsin * pose.jointLeftElbowRelative.z;
+  leftER.z = fsin * pose.jointLeftElbowRelative.x  + fcos * pose.jointLeftElbowRelative.z;
+
+  PVector leftHR = new PVector();
+  leftHR.x = fcos * pose.jointLeftHandRelative.x  - fsin * pose.jointLeftHandRelative.z;
+  leftHR.z = fsin * pose.jointLeftHandRelative.x  + fcos * pose.jointLeftHandRelative.z;
+
+  PVector rightSR = new PVector();
+  rightSR.x = fcos * pose.jointRightShoulderRelative.x  - fsin * pose.jointRightShoulderRelative.z;
+  rightSR.z = fsin * pose.jointRightShoulderRelative.x  + fcos * pose.jointRightShoulderRelative.z;
+
+  PVector rightER = new PVector();
+  rightER.x = fcos * pose.jointRightElbowRelative.x  - fsin * pose.jointRightElbowRelative.z;
+  rightER.z = fsin * pose.jointRightElbowRelative.x  + fcos * pose.jointRightElbowRelative.z;
+
+  PVector rightHR = new PVector();
+  rightHR.x = fcos * pose.jointRightHandRelative.x  - fsin * pose.jointRightHandRelative.z;
+  rightHR.z = fsin * pose.jointRightHandRelative.x  + fcos * pose.jointRightHandRelative.z;
+
+
+  println(" left shoulder after " +  leftSR.x + " : " +   leftSR.z+ "; "+
+                                  rightSR.x    + " : " +   rightSR.z + "; ");
+
+  pose.jointLeftShoulderRelative.x = leftSR.x;
+  pose.jointLeftShoulderRelative.z = leftSR.z;
+  
+  pose.jointLeftElbowRelative.x = leftER.x;
+  pose.jointLeftElbowRelative.z = leftER.z;
+
+  pose.jointLeftHandRelative.x = leftHR.x;
+  pose.jointLeftHandRelative.z = leftHR.z;
+  
+  pose.jointRightShoulderRelative.x = rightSR.x;
+  pose.jointRightShoulderRelative.z = rightSR.z;
+  
+  pose.jointRightElbowRelative.x = rightER.x;
+  pose.jointRightElbowRelative.z = rightER.z;
+  
+  pose.jointRightHandRelative.x = rightHR.x;
+  pose.jointRightHandRelative.z = rightHR.z;
+  
+  
+}
 
 // draw the skeleton with the selected joints
-PVector evaluateSkeleton(int userId)
+PVector evaluateSkeleton(int userId, int person)
 {
     Pose pose = new Pose();
 
-// @author: LHA
-// the draw functionality is called frequently
+	// @author: LHA
+	// the draw functionality is called frequently
     PVector jointNeck3D = new PVector();
   
     PVector jointLeftShoulder3D = new PVector();
@@ -1447,30 +1570,6 @@ PVector evaluateSkeleton(int userId)
     pose.jointRightHandRelative.y = jointRightHand3D.y - jointNeck3D.y;
     pose.jointRightHandRelative.z = jointRightHand3D.z - jointNeck3D.z;
 
-
-    //TODO shoulder orientation in space
-    
-    // get vector between shoulders and computer the normal in the middle of the [strecke]
-    // only 2d vector, as angle between only computes one angle (x,y component)
-    PVector leftToRight = new PVector();
-    leftToRight.x = pose.jointRightShoulderRelative.x - pose.jointLeftShoulderRelative.x;
-    leftToRight.y = pose.jointRightShoulderRelative.z - pose.jointLeftShoulderRelative.z;
-
-    // normalize
-    leftToRight.normalize();
-    // the orientation in the view from the kinect sensor
-    PVector facingV = new PVector(1,0); //use the normal to the z-direction (facing of the k.sensor) //0,1);
-    // 0 -> front face to sensor face
-    // 90 -> turned front to right
-    // -90 -> turned front to left
-    float angle = degrees( PVector.angleBetween(leftToRight,facingV) );
-    if (leftToRight.y > 0) angle = -angle;
-    // TODO compute back-facing vector (test sign )
-    // negative x is with face to the kinect device,   
-   // println(" shoulders "+person + " vektor "+leftToRight + " angle "+angle); 
-    
-    
-    
     
     //TODO: more than 2 players, different colors
     if (person < PLAYER_COLORS.length) pg.stroke(PLAYER_COLORS[person].x,PLAYER_COLORS[person].y,PLAYER_COLORS[person].z,255);
@@ -1558,7 +1657,9 @@ PVector evaluateSkeleton(int userId)
     
     // add new pose to ringbuffer
     pose = normalizePose(pose);
-    ringbuffer[person].fillBuffer( pose );
+	if (ROTATE_PLAYER) normalizePoseRotation(pose);    
+    
+	ringbuffer[person].fillBuffer( pose );
     
     // the distance is called only if the throw gesture
     if(foundSkeleton){
@@ -1764,9 +1865,12 @@ void loadData(int moveID) {
         move[moveID][j].jointRightHandRelative.x = data.readFloat();
         move[moveID][j].jointRightHandRelative.y = data.readFloat();
         move[moveID][j].jointRightHandRelative.z = data.readFloat();
+
         
-        move[moveID][j] = normalizePose( move[moveID][j] );
-    } 
+        if (NORMALIZE_POSE_ON_LOAD) move[moveID][j] = normalizePose( move[moveID][j] );
+        if (ROTATE_POSE_ON_LOAD) normalizePoseRotation( move[moveID][j]);
+      
+  } 
 }
 
 
