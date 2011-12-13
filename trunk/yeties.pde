@@ -60,9 +60,6 @@ int displayCost = 1;
 int N = 25;
 int M = 2*N;
 
-int counter = 0;
-int counter2 = 0;
-int counterEvent = 0;
 
 // gesture recognition: Relative Array of objects
 Pose[][] grid;
@@ -103,13 +100,15 @@ int X = 10;
 
 ////////////////////////////////////
 // game logic
+int counter = 0;
+int counter2 = 0;
+int counterEvent = 0;
+
+PVector localPlayerNecks[] = new PVector[PLAYER_COUNT];
+
 PVector remotePlayerNecks[] = new PVector[PLAYER_COUNT];
 PVector remotePlayerActualHands[] = new PVector[PLAYER_COUNT];
 PVector remotePlayerOldHands[] = new PVector[PLAYER_COUNT];
-
-//TODO: what about the remote players ?!?
-//PVector remotePlayerNecks[] = new PVector[PLAYER_COUNT];
-
 
 // removed: is in PLAYER_COUNT: int spielerzahl = 3;
 //int modus = 3; //TODO: welcher modus hat welche bedeutung?
@@ -1101,7 +1100,7 @@ void drawGameField()
     line(2, 0, 4, 2, 0, -4);
 		
     //TODO: lost popMatrix ? 
-    popMatrix();
+    //popMatrix();
     
  		
 		
@@ -1111,7 +1110,6 @@ void drawGameField()
 		/* Kinectkoordinaten */
  
      //box(0.3f, 0.05f, 0.07f);
-
     popMatrix();
 }
 
@@ -1125,7 +1123,8 @@ if (false)
              translate(neck.x, neck.y, neck.z);
              box(0.1f,0.1f,0.1f);
              popMatrix();
-}            
+}
+
              pushMatrix();
              float aspect = (float)playas[0][0].width / (float)playas[0][0].height;
              float heldHeight = neck.y + 0.3f;
@@ -1438,13 +1437,12 @@ void draw()
         if (!foundSkeleton) myMessage.add("looking for pose ...");
         oscP5.send(myMessage, myRemoteLocation); 
       }
-    
-    pg.endDraw();
-    
-//    popMatrix();
 
     
-    
+    pg.endDraw();
+
+    // the matrix set in drawGameField()    
+    popMatrix();
 }
 
 // all the poses will be rotatet. need neck-relative position (as origin)
