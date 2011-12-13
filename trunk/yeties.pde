@@ -5,7 +5,7 @@
 *        Elke Müller,
 *        Jan Felix Reuter,
          Thomas Schenker,
-		 Alexander Liebrich
+	 Alexander Liebrich
 *        and others (need_to_be_added)
 * date:  04/12/2011 (m/d/y)
 * ver:   0.1
@@ -15,6 +15,15 @@
 // === setup ==================================================
 boolean autoPoseDetection = true;
 boolean useFullscreen = false;
+
+static int CHECK_SKELETON_COUNT = 6;
+static int PLAYER_COUNT = 3;
+static boolean ROTATE_PLAYER = true;
+static boolean ROTATE_POSE_ON_LOAD = false;
+static boolean NORMALIZE_POSE_ON_LOAD = true;
+
+static boolean showDebugUI = true;
+
 // ============================================================
 
 // import fullscreen.*; 
@@ -30,23 +39,23 @@ OscP5 oscP5;
 NetAddress myRemoteLocation;
 
 // settings
-boolean showDebugUI = true;
-//TODO: more than 2 players
-static int CHECK_SKELETON_COUNT = 6;
-static int PLAYER_COUNT = 4;
-static boolean ROTATE_PLAYER = true;
-static boolean ROTATE_POSE_ON_LOAD = false;
-static boolean NORMALIZE_POSE_ON_LOAD = true;
 
+/////////////////////
 // debug UI
 PVector[] PLAYER_COLORS = new PVector[PLAYER_COUNT];
+PFont fontA32;
+PFont fontA12;
+PImage[] foto;
+PImage[][] warnings;
+PImage shapeOfUser;  
+PImage kineticspace;
+
+boolean switchDisplay = false;
+boolean updateDisplay = true;
+int warning[] = new int[PLAYER_COUNT];
 
 // gesture recognition: 
 int displayCost = 1;
-
-// game logic
-int spielerzahl = 3;
-int modus = 3;
 
 // gesture recognition: 
 int N = 25;
@@ -56,43 +65,20 @@ int counter = 0;
 int counter2 = 0;
 int counterEvent = 0;
 
-//removed, is only a local var: int person = 0; // current person
-
-// game logic
-PVector playerNecks[] = new PVector[4];
-PVector playerActualHands[] = new PVector[4];
-PVector playerOldHands[] = new PVector[4];
-
-// game ui
-PImage[][] playas = new PImage[spielerzahl][modus];
-PImage bg;
-
 // gesture recognition: Relative Array of objects
 Pose[][] grid;
 Pose[][] move;
 
-PGraphics pg;
-
-// debug UI
-PFont fontA32;
-PFont fontA12;
-PImage[] foto;
-PImage[][] warnings;
-PImage shapeOfUser;  
-PImage kineticspace;
-
 // gesture recognition
 boolean foundSkeleton = false;
-// debug UI
-boolean switchDisplay = false;
-boolean updateDisplay = true;
+
 
 static int MAX_GESTURE_COUNT = 10;
 int steps[] = new int[MAX_GESTURE_COUNT];
 float speed[] = new float[MAX_GESTURE_COUNT];
 //TODO: more than 2 players
-float cost[][] = new float[PLAYER_COUNT][MAX_GESTURE_COUNT]; //TODO: more than 2 players
-float costLast[][] = new float[PLAYER_COUNT][MAX_GESTURE_COUNT]; //TODO: more than 2 players
+float cost[][] = new float[PLAYER_COUNT][MAX_GESTURE_COUNT]; 
+float costLast[][] = new float[PLAYER_COUNT][MAX_GESTURE_COUNT]; 
 boolean empty[] = new boolean[MAX_GESTURE_COUNT];
 
 Data data;
@@ -115,17 +101,29 @@ HandPoseAbsolute oldHandPose = new HandPoseAbsolute();
 int X = 10;
 // ==== COPY ===
 
-/////////////////////
-// debug UI
-int warning[] = new int[PLAYER_COUNT];
 
-// define the pose object
+////////////////////////////////////
+// game logic
+PVector playerNecks[] = new PVector[PLAYER_COUNT];
+PVector playerActualHands[] = new PVector[PLAYER_COUNT];
+PVector playerOldHands[] = new PVector[PLAYER_COUNT];
 
-// @author: LHA
-// a Pose contains many points
-// in this case only 6 points are relevant
 
-// game UI
+// removed: is in PLAYER_COUNT: int spielerzahl = 3;
+//int modus = 3; //TODO: welcher modus hat welche bedeutung?
+static int PLAYER_MODUS_COUNT = 3;
+
+boolean ballThrow = false;
+PVector throwStartPos;
+PVector throwEndPos;
+
+////////////////////////////////////
+// game ui
+PGraphics pg;
+
+PImage[][] playas = new PImage[PLAYER_COUNT][PLAYER_MODUS_COUNT];
+PImage bg;
+
 
 float kinectHeight = 0.5f;
 float kinectDistance = 0.2f;
@@ -170,9 +168,6 @@ PMatrix3D fieldToCameraTranslation = new PMatrix3D(1, 0, 0, 0,
                                                    0, 0, 1, -cameraDistance,
                                                    0, 0, 0, 1);
 
-boolean ballThrow = false;
-PVector throwStartPos;
-PVector throwEndPos;
 
 class Pose
 {
@@ -247,6 +242,9 @@ class RingBufferForThrowAction{
 }
 // ==== COPY ===
 
+
+//////////////////////////////////////////////////////////
+// gesture recognition
 
 // define the pose object
 
@@ -767,7 +765,7 @@ void setup()
 
     // ten poses with N pose-frames
   //  pose = new Pose();//[10];
-    move = new Pose[10][N];
+    move = new Pose[MAX_GESTURE_COUNT][N];
 
     // @author: LHA
     // RingBuffer[2] means, max. 2 persons can be tracked and all coordinate are saved in poseArray
@@ -787,14 +785,14 @@ void setup()
     
     data = new Data();
   
-    for(int i = 0; i <= 9; i++) {
+    for(int i = 0; i < MAX_GESTURE_COUNT; i++) {
         for(int j = 0; j < N; j++) move[i][j] = new Pose();
     }
 
-    foto = new PImage[10];
+    foto = new PImage[MAX_GESTURE_COUNT];
   
     // load the stored data
-    for (int i = 0; i <= 9; i++) {
+    for (int i = 0; i < MAX_GESTURE_COUNT; i++) {
         String str = Integer.toString(i);          
         empty[i] = false;
         
@@ -818,8 +816,6 @@ void setup()
             loadData(i);
         }
     }
-
-    //TODO: more than 2 players
 
     warnings = new PImage[PLAYER_COUNT][8];
 
@@ -884,55 +880,50 @@ void setup()
       stroke(0,0,255);
       strokeWeight(3);
       smooth();
+      pg = createGraphics(context.depthWidth(), context.depthHeight(), P2D);
     }
-    pg = createGraphics(context.depthWidth(), context.depthHeight(), P2D);
-  
-    if (!useFullscreen)
-    {
+    else {
+      // we are in game mode
+      
+      if (!useFullscreen)
+      {
         // size(1070, 850, OPENGL); 
         // size(1070, 850); 
         size(1170, 800, P3D);
-        
-      //  pushMatrix();
-      //  rotate(-PI/2);
-      //  image(kineticspace, -780, 1070);
-      //  popMatrix();
-    }
-    else
-    {
+      }
+      else
+      {
         size(1280, 800, P3D);
         // Create the fullscreen object
         // fs = new FullScreen(this); 
   
         // enter fullscreen mode
         // fs.enter(); 
-        
-       // pushMatrix();
-       // rotate(-PI/2);
-       // image(kineticspace, -780, 1180);
-       // popMatrix();
-    }
-    
-    kinectToFieldScaled.set(kinectToField);
-    kinectToFieldScaled.apply(kinectScale);
+      }
+      
+      
+      kinectToFieldScaled.set(kinectToField);
+      kinectToFieldScaled.apply(kinectScale);
 
-    otherKinectToFieldScaled.set(otherKinectToFieldTranslate);
-    otherKinectToFieldScaled.apply(otherKinectToFieldRotate);
-    otherKinectToFieldScaled.apply(kinectScale);
+      otherKinectToFieldScaled.set(otherKinectToFieldTranslate);
+      otherKinectToFieldScaled.apply(otherKinectToFieldRotate);
+      otherKinectToFieldScaled.apply(kinectScale);
     
-    snowball = loadImage("Schneeball.png");
-    bg = loadImage("Background.png");
-    bg.resize(width, height);
+      snowball = loadImage("Schneeball.png");
+      bg = loadImage("Background.png");
+      bg.resize(width, height);
     
-    for(int i=0; i<spielerzahl; i++) 
-    {
-     for(int j=0; j<modus; j++) 
-     {
-        String imageName = "held" + i + j + ".png";
-        playas[i][j] = loadImage(imageName);
+      for(int i=0; i<PLAYER_COUNT; i++) 
+      {
+         for(int j=0; j<PLAYER_MODUS_COUNT;j++) 
+         {
+           String imageName = "held" + i + j + ".png";
+           playas[i][j] = loadImage(imageName);
          
-     }
-   }
+         }
+      }
+  }
+    
 }
 
 /* incoming osc message are forwarded to the oscEvent method. */
@@ -1879,6 +1870,10 @@ void loadData(int moveID) {
 
 void keyPressed()
 {
+  // key interaction only in debug mode
+  if (!showDebugUI) {
+    return;
+  }
   // check for active users
   IntVector userList = new IntVector();
   context.getUsers(userList);
@@ -1921,11 +1916,12 @@ void keyPressed()
     displayCost--;
     if (displayCost < 0) displayCost = 0;
     break;
-
+/* no dynamic switching is supported
   case 'u':
     showDebugUI = ! showDebugUI;
     println(" show debug "+showDebugUI);
     break;
+    */
   case 'd':
     updateDisplay = true;
     if (switchDisplay) 
@@ -1976,5 +1972,6 @@ void keyPressed()
       println("Can't load calibration file.");
     break;
   }
+  
 }
 
