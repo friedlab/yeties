@@ -89,10 +89,10 @@ RingBufferForThrowAction[] ringbufferHand;
 
 //TODO:@LHA: this is only for one player 
 // the actual hand pose
-HandPoseAbsolute actualHandPose = new HandPoseAbsolute();
+HandPoseAbsolute[] actualHandPose = new HandPoseAbsolute[PLAYER_COUNT];
 
 // the old hand pose ( 10 poses before)
-HandPoseAbsolute oldHandPose = new HandPoseAbsolute();
+HandPoseAbsolute[] oldHandPose = new HandPoseAbsolute[PLAYER_COUNT];
 
 // latenz
 int X = 10;
@@ -808,6 +808,9 @@ void setup()
       remotePlayerHit[i] = false;
       remotePlayerFrightened[i] = false;
       
+      actualHandPose[i] = new HandPoseAbsolute();
+      oldHandPose[i] = new HandPoseAbsolute();
+      
     }
     
     // ==== COPY ===
@@ -1189,11 +1192,23 @@ void createBall(PVector throwStartPos, PVector throwEndPos, PMatrix3D transform)
                          
                   PVector dir = PVector.sub(fieldThrowEndPos, fieldThrowStartPos);
                   dir.y = 0;
-                  
+
+                                  
                   dir.normalize();
-                  dir.mult(0.1f);
-                  
+//                  dir.mult(0.1f);
+                  // less horziontal sensivity
+                  dir.x *= 0.05f;
+                  // as we have no speed information for the throw i set a default ball speed (AL)
+                  // its the bug with the directly right or left thrown balls
+                  // if the computed speed is too low, the horizontal value takes too much importance
+                  dir.z = -0.1f;
+                  //dir.z *= 0.1f;
+                  // no ball flying backwards
+                  //if (dir.z > 0) dir.z = -dir.z;
+
+                
                   ball.dir = dir; 
+                  println(" create ball "+ ball.pos + " dir "+ ball.dir );  
                 
                   balls.add(ball);    
 }
@@ -1426,8 +1441,8 @@ void draw()
       computeCosts(detectedPlayerCount); // updates only if person > 0
           
       for (int p = 0; p<detectedPlayerCount; p++) {
-        if (localPlayerThrowCounter[detectedPlayerCount] < SUPPRESS_THROW) {
-          println("throw suppressed for player "+p+" c "+localPlayerThrowCounter[p]);
+        if (localPlayerThrowCounter[p] < SUPPRESS_THROW) {
+          //println("throw suppressed for player "+p+" c "+localPlayerThrowCounter[p]);
         }
         else {
           for (int i = 0; i < MAX_GESTURE_COUNT; i++) {
@@ -1437,14 +1452,14 @@ void draw()
                  println("Throw!");
                  
                  // reset throw counter
-                 localPlayerThrowCounter[detectedPlayerCount] = 0;
+                 localPlayerThrowCounter[p] = 0;
                     
                  //TODO: how to map the detected (in evaluateSkeleton) left or right arm to these [left/right]HandAbsolute
                  //TODO:@LHA: why only the left hand ?
                  // should be: PVector lHA = actualHandPose[p].leftHandAbsolute;
-                 PVector lHA = actualHandPose.leftHandAbsolute;
+                 PVector lHA = actualHandPose[p].leftHandAbsolute;
                  PVector throwEndPos = new PVector(lHA.x, lHA.y, lHA.z);
-                 PVector olHA = oldHandPose.leftHandAbsolute;
+                 PVector olHA = oldHandPose[p].leftHandAbsolute;
                  PVector throwStartPos = new PVector(olHA.x, olHA.y, olHA.z);
        
                  //TODO: send osc message
@@ -1706,20 +1721,21 @@ PVector evaluateSkeleton(int userId, int detectedPlayerCount)
     
     // ==== COPY ===
     // LHA
-    // the actual handPose    
-    actualHandPose.leftHandAbsolute.x = jointLeftHand3D.x;
-    actualHandPose.leftHandAbsolute.y = jointLeftHand3D.y;
-    actualHandPose.leftHandAbsolute.z = jointLeftHand3D.z;
+    // the actual handPose   
     
-    actualHandPose.rightHandAbsolute.x = jointRightHand3D.x;
-    actualHandPose.rightHandAbsolute.y = jointRightHand3D.y;
-    actualHandPose.rightHandAbsolute.z = jointRightHand3D.z;
+    actualHandPose[detectedPlayerCount].leftHandAbsolute.x = jointLeftHand3D.x;
+    actualHandPose[detectedPlayerCount].leftHandAbsolute.y = jointLeftHand3D.y;
+    actualHandPose[detectedPlayerCount].leftHandAbsolute.z = jointLeftHand3D.z;
+    
+    actualHandPose[detectedPlayerCount].rightHandAbsolute.x = jointRightHand3D.x;
+    actualHandPose[detectedPlayerCount].rightHandAbsolute.y = jointRightHand3D.y;
+    actualHandPose[detectedPlayerCount].rightHandAbsolute.z = jointRightHand3D.z;
 
     // add the new hand pose to the ringbuffer for hand poses
-    ringbufferHand[detectedPlayerCount].addANewPose(actualHandPose);
+    ringbufferHand[detectedPlayerCount].addANewPose(actualHandPose[detectedPlayerCount]);
     
     // the older pose
-    oldHandPose = ringbufferHand[detectedPlayerCount].getTheOlderPose();
+    oldHandPose[detectedPlayerCount] = ringbufferHand[detectedPlayerCount].getTheOlderPose();
     
     if(oldHandPose == null) println("NO history");
     // ==== COPY ===
