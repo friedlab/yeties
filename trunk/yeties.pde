@@ -6,6 +6,7 @@
 *        Jan Felix Reuter,
          Thomas Schenker,
 	 Alexander Liebrich
+	 	 Hoang Anh Le
 *        and others (need_to_be_added)
 * date:  04/12/2011 (m/d/y)
 * ver:   0.1
