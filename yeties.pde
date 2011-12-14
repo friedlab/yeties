@@ -20,7 +20,7 @@ boolean useFullscreen = false;
 static boolean IS_DEBUG_MODE = false;
 
 static int CHECK_SKELETON_COUNT = 6;
-static int PLAYER_COUNT = 3;
+static final int PLAYER_COUNT = 3;
 static boolean ROTATE_PLAYER = true;
 static boolean ROTATE_POSE_ON_LOAD = false;
 static boolean NORMALIZE_POSE_ON_LOAD = true;
@@ -259,6 +259,12 @@ class RingBufferForThrowAction{
   HandPoseAbsolute getTheOlderPose(){
       return poseArray[(getActualPointer()-X+M)%M];
   }
+  
+  // get the actual pose
+  HandPoseAbsolute getTheActualPose(){
+    return poseArray[getActualPointer()];
+  }
+
 }
 // ==== COPY ===
 
@@ -1325,6 +1331,8 @@ void drawDebug() {
       }
     
     
+    
+    
     // evaluate and draw DTW
     if (foundSkeleton)
     {
@@ -1440,6 +1448,14 @@ void draw()
       }
     
       computeCosts(detectedPlayerCount); // updates only if person > 0
+        
+      boolean playerLeftHandGestureDetected[] = new boolean[PLAYER_COUNT]; 
+      boolean playerRightHandGestureDetected[] = new boolean[PLAYER_COUNT];
+      for(int k = 0; k < PLAYER_COUNT; k++) {
+        playerLeftHandGestureDetected[k] = false;
+        playerRightHandGestureDetected[k] = false;
+      }  
+        
           
       for (int p = 0; p<detectedPlayerCount; p++) {
         if (localPlayerThrowCounter[p] < SUPPRESS_THROW) {
@@ -1463,7 +1479,12 @@ void draw()
                  PVector olHA = oldHandPose[p].leftHandAbsolute;
                  PVector throwStartPos = new PVector(olHA.x, olHA.y, olHA.z);
        
-                 //TODO: send osc message
+                 // geht davon aus dass die gesten für die linke hand auf 0-4 und die gesten für die rechte hand auf 5-9 liegen
+                 if(i < 5) {
+                   playerLeftHandGestureDetected[p] = true;
+                 } else {
+                   playerRightHandGestureDetected[p] = true;
+                 }
 
                  // virtually throw: add ball
                  createBall(throwStartPos, throwEndPos, kinectToFieldScaled);           
@@ -1474,21 +1495,74 @@ void draw()
         }  
       }
   
+  
+  
+      // get the current neck position of every player, for osc message
+      PVector playerNecks[] = new PVector[4];
+      for(int n = 0; n < PLAYER_COUNT; n++) {
+        playerNecks[n] = new PVector();
+        context.getJointPositionSkeleton(n,SimpleOpenNI.SKEL_NECK,playerNecks[n]);
+        if(playerNecks[n] == null) {
+          playerNecks[n] = new PVector(0,0,0);
+        }
+      }
+
+      // get the current and old hand position of every player, for osc message
+      PVector playerActualHands[] = new PVector[PLAYER_COUNT];
+      PVector playerOldHands[] = new PVector[PLAYER_COUNT];
+      
+      for(int k = 0; k < PLAYER_COUNT; k++) {
+    
+          if(playerLeftHandGestureDetected[k]) {
+            playerActualHands[k] = ringbufferHand[k].getTheActualPose().leftHandAbsolute;
+            playerOldHands[k] = ringbufferHand[k].getTheOlderPose().leftHandAbsolute;
+            playerLeftHandGestureDetected[k] = false;
+          } else if(playerRightHandGestureDetected[k]) {
+            playerActualHands[k] = ringbufferHand[k].getTheActualPose().rightHandAbsolute;
+            playerOldHands[k] = ringbufferHand[k].getTheOlderPose().rightHandAbsolute;
+            playerRightHandGestureDetected[k] = false;
+          } else {
+            playerActualHands[k] = new PVector(0, 0, 0);
+            playerOldHands[k] = new PVector(0, 0, 0);
+          }
+      }
+
+  
+      OscMessage updateMessage = new OscMessage("/update"); 
+
+      for(int s = 0; s < PLAYER_COUNT; s++) {
+ 
+        updateMessage.add(playerNecks[s].x);
+        updateMessage.add(playerNecks[s].y);
+        updateMessage.add(playerNecks[s].z);
+ 
+        updateMessage.add(playerOldHands[s].x);
+        updateMessage.add(playerOldHands[s].y);
+        updateMessage.add(playerOldHands[s].z);
+    
+        updateMessage.add(playerActualHands[s].x);
+        updateMessage.add(playerActualHands[s].y);
+        updateMessage.add(playerActualHands[s].z);
+   
+      }
+      oscP5.send(updateMessage, myRemoteLocation); 
+  
+  
       updateBalls();
 
       
 
        //TODO: do we need this anymore
-      counter2++;
+     /* counter2++;
       counter2 %= 25;
       if (counter2 == 0)
       {
-        /* send OSC message */
+        // send OSC message
         OscMessage myMessage = new OscMessage("/status");
         if (foundSkeleton) myMessage.add("tracking ...");
         if (!foundSkeleton) myMessage.add("looking for pose ...");
         oscP5.send(myMessage, myRemoteLocation); 
-      }
+      }*/
 
     
     pg.endDraw();
