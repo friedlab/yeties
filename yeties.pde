@@ -5,8 +5,8 @@
 *        Elke Müller,
 *        Jan Felix Reuter,
          Thomas Schenker,
-	 Alexander Liebrich
-	 	 Hoang Anh Le
+	 Alexander Liebrich,
+	 Hoang Anh Le
 *        and others (need_to_be_added)
 * date:  04/12/2011 (m/d/y)
 * ver:   0.1
@@ -21,9 +21,11 @@ static boolean IS_DEBUG_MODE = false;
 
 static int CHECK_SKELETON_COUNT = 6;
 static final int PLAYER_COUNT = 3;
+static boolean NORMALIZE_SIZE = true;
 static boolean ROTATE_PLAYER = true;
-static boolean ROTATE_POSE_ON_LOAD = false;
-static boolean NORMALIZE_POSE_ON_LOAD = true;
+// MWO: something wrong in the loading routine of NORMALIZE_ROTATION_ON_LOAD (shows in DTW, but can't find error)
+static boolean NORMALIZE_ROTATION_ON_LOAD = false;
+static boolean NORMALIZE_SIZE_ON_LOAD = true;
 
 // ============================================================
 
@@ -58,7 +60,7 @@ int warning[] = new int[PLAYER_COUNT];
 int displayCost = 1;
 
 // gesture recognition: 
-int N = 25;
+int N = 10;
 int M = 2*N;
 
 
@@ -643,7 +645,7 @@ class RingBuffer
     }
 }
 
-Pose normalizePose(Pose p) {
+Pose normalizeSize(Pose p) {
 // size normalization
     float scaleFactor = 1.0;
     float normalShoulderWidth = 370*scaleFactor;
@@ -762,6 +764,92 @@ Pose normalizePose(Pose p) {
     p.jointRightHandRelative = newRightHandPosition;
     
     return p;
+}
+
+// all the poses will be rotatet. need neck-relative position (as origin)
+Pose normalizeRotation(Pose pose) {
+
+  // get vector between shoulders and computer the normal in the middle of the [strecke]
+  // only 2d vector, as angle between only computes one angle (x,y component)
+  PVector leftToRight = new PVector();
+  leftToRight.x = pose.jointRightShoulderRelative.x - pose.jointLeftShoulderRelative.x;
+  leftToRight.y = pose.jointRightShoulderRelative.z - pose.jointLeftShoulderRelative.z;
+
+  // normalize
+  //leftToRight.normalize();
+  // the orientation in the view from the kinect sensor
+  PVector facingV = new PVector(1, 0); //use the normal to the z-direction (facing of the k.sensor) //0,1);
+  // 0 -> front face to sensor face
+  // 90 -> turned front to right
+  // -90 -> turned front to left
+  float fradians = PVector.angleBetween(leftToRight, facingV);
+  float angle = degrees( fradians );
+
+  if (leftToRight.y > 0){
+     //angle = -angle;
+     //fradians = -fradians;
+  }    
+  // TODO compute back-facing vector (test sign )
+  // negative x is with face to the kinect device,   
+//  println(" shoulders vektor "+leftToRight + " angle "+angle + " rads "+ fradians); 
+
+
+
+  // rotate all bones by this angle, so that the recognisable     
+  float fcos = cos(-fradians);
+  float fsin = sin(-fradians);
+/*
+  println(" left shoulder before " +   pose.jointLeftShoulderRelative.x + " : " +   pose.jointLeftShoulderRelative.z+ "; "+
+                                  pose.jointRightShoulderRelative.x    + " : " +   pose.jointRightShoulderRelative.z + "; ");
+                                  
+  */                                
+  PVector leftSR = new PVector();
+  leftSR.x = fcos *     pose.jointLeftShoulderRelative.x  - fsin *     pose.jointLeftShoulderRelative.z;
+  leftSR.z = fsin *     pose.jointLeftShoulderRelative.x  + fcos *     pose.jointLeftShoulderRelative.z;
+
+  PVector leftER = new PVector();
+  leftER.x = fcos * pose.jointLeftElbowRelative.x  - fsin * pose.jointLeftElbowRelative.z;
+  leftER.z = fsin * pose.jointLeftElbowRelative.x  + fcos * pose.jointLeftElbowRelative.z;
+
+  PVector leftHR = new PVector();
+  leftHR.x = fcos * pose.jointLeftHandRelative.x  - fsin * pose.jointLeftHandRelative.z;
+  leftHR.z = fsin * pose.jointLeftHandRelative.x  + fcos * pose.jointLeftHandRelative.z;
+
+  PVector rightSR = new PVector();
+  rightSR.x = fcos * pose.jointRightShoulderRelative.x  - fsin * pose.jointRightShoulderRelative.z;
+  rightSR.z = fsin * pose.jointRightShoulderRelative.x  + fcos * pose.jointRightShoulderRelative.z;
+
+  PVector rightER = new PVector();
+  rightER.x = fcos * pose.jointRightElbowRelative.x  - fsin * pose.jointRightElbowRelative.z;
+  rightER.z = fsin * pose.jointRightElbowRelative.x  + fcos * pose.jointRightElbowRelative.z;
+
+  PVector rightHR = new PVector();
+  rightHR.x = fcos * pose.jointRightHandRelative.x  - fsin * pose.jointRightHandRelative.z;
+  rightHR.z = fsin * pose.jointRightHandRelative.x  + fcos * pose.jointRightHandRelative.z;
+
+/*
+  println(" left shoulder after " +  leftSR.x + " : " +   leftSR.z+ "; "+
+                                  rightSR.x    + " : " +   rightSR.z + "; ");
+*/
+  pose.jointLeftShoulderRelative.x = leftSR.x;
+  pose.jointLeftShoulderRelative.z = leftSR.z;
+  
+  pose.jointLeftElbowRelative.x = leftER.x;
+  pose.jointLeftElbowRelative.z = leftER.z;
+
+  pose.jointLeftHandRelative.x = leftHR.x;
+  pose.jointLeftHandRelative.z = leftHR.z;
+  
+  pose.jointRightShoulderRelative.x = rightSR.x;
+  pose.jointRightShoulderRelative.z = rightSR.z;
+  
+  pose.jointRightElbowRelative.x = rightER.x;
+  pose.jointRightElbowRelative.z = rightER.z;
+  
+  pose.jointRightHandRelative.x = rightHR.x;
+  pose.jointRightHandRelative.z = rightHR.z;
+  
+  return pose;  
 }
 
 
@@ -1546,24 +1634,8 @@ void draw()
    
       }
       oscP5.send(updateMessage, myRemoteLocation); 
-  
-  
+    
       updateBalls();
-
-      
-
-       //TODO: do we need this anymore
-     /* counter2++;
-      counter2 %= 25;
-      if (counter2 == 0)
-      {
-        // send OSC message
-        OscMessage myMessage = new OscMessage("/status");
-        if (foundSkeleton) myMessage.add("tracking ...");
-        if (!foundSkeleton) myMessage.add("looking for pose ...");
-        oscP5.send(myMessage, myRemoteLocation); 
-      }*/
-
     
     pg.endDraw();
 
@@ -1571,91 +1643,6 @@ void draw()
     popMatrix();
 }
 
-// all the poses will be rotatet. need neck-relative position (as origin)
-void normalizePoseRotation(Pose pose) {
-
-  // get vector between shoulders and computer the normal in the middle of the [strecke]
-  // only 2d vector, as angle between only computes one angle (x,y component)
-  PVector leftToRight = new PVector();
-  leftToRight.x = pose.jointRightShoulderRelative.x - pose.jointLeftShoulderRelative.x;
-  leftToRight.y = pose.jointRightShoulderRelative.z - pose.jointLeftShoulderRelative.z;
-
-  // normalize
-  //leftToRight.normalize();
-  // the orientation in the view from the kinect sensor
-  PVector facingV = new PVector(1, 0); //use the normal to the z-direction (facing of the k.sensor) //0,1);
-  // 0 -> front face to sensor face
-  // 90 -> turned front to right
-  // -90 -> turned front to left
-  float fradians = PVector.angleBetween(leftToRight, facingV);
-  float angle = degrees( fradians );
-
-  if (leftToRight.y > 0){
-     //angle = -angle;
-     //fradians = -fradians;
-  }    
-  // TODO compute back-facing vector (test sign )
-  // negative x is with face to the kinect device,   
-//  println(" shoulders vektor "+leftToRight + " angle "+angle + " rads "+ fradians); 
-
-
-
-  // rotate all bones by this angle, so that the recognisable     
-  float fcos = cos(-fradians);
-  float fsin = sin(-fradians);
-/*
-  println(" left shoulder before " +   pose.jointLeftShoulderRelative.x + " : " +   pose.jointLeftShoulderRelative.z+ "; "+
-                                  pose.jointRightShoulderRelative.x    + " : " +   pose.jointRightShoulderRelative.z + "; ");
-                                  
-  */                                
-  PVector leftSR = new PVector();
-  leftSR.x = fcos *     pose.jointLeftShoulderRelative.x  - fsin *     pose.jointLeftShoulderRelative.z;
-  leftSR.z = fsin *     pose.jointLeftShoulderRelative.x  + fcos *     pose.jointLeftShoulderRelative.z;
-
-  PVector leftER = new PVector();
-  leftER.x = fcos * pose.jointLeftElbowRelative.x  - fsin * pose.jointLeftElbowRelative.z;
-  leftER.z = fsin * pose.jointLeftElbowRelative.x  + fcos * pose.jointLeftElbowRelative.z;
-
-  PVector leftHR = new PVector();
-  leftHR.x = fcos * pose.jointLeftHandRelative.x  - fsin * pose.jointLeftHandRelative.z;
-  leftHR.z = fsin * pose.jointLeftHandRelative.x  + fcos * pose.jointLeftHandRelative.z;
-
-  PVector rightSR = new PVector();
-  rightSR.x = fcos * pose.jointRightShoulderRelative.x  - fsin * pose.jointRightShoulderRelative.z;
-  rightSR.z = fsin * pose.jointRightShoulderRelative.x  + fcos * pose.jointRightShoulderRelative.z;
-
-  PVector rightER = new PVector();
-  rightER.x = fcos * pose.jointRightElbowRelative.x  - fsin * pose.jointRightElbowRelative.z;
-  rightER.z = fsin * pose.jointRightElbowRelative.x  + fcos * pose.jointRightElbowRelative.z;
-
-  PVector rightHR = new PVector();
-  rightHR.x = fcos * pose.jointRightHandRelative.x  - fsin * pose.jointRightHandRelative.z;
-  rightHR.z = fsin * pose.jointRightHandRelative.x  + fcos * pose.jointRightHandRelative.z;
-
-/*
-  println(" left shoulder after " +  leftSR.x + " : " +   leftSR.z+ "; "+
-                                  rightSR.x    + " : " +   rightSR.z + "; ");
-*/
-  pose.jointLeftShoulderRelative.x = leftSR.x;
-  pose.jointLeftShoulderRelative.z = leftSR.z;
-  
-  pose.jointLeftElbowRelative.x = leftER.x;
-  pose.jointLeftElbowRelative.z = leftER.z;
-
-  pose.jointLeftHandRelative.x = leftHR.x;
-  pose.jointLeftHandRelative.z = leftHR.z;
-  
-  pose.jointRightShoulderRelative.x = rightSR.x;
-  pose.jointRightShoulderRelative.z = rightSR.z;
-  
-  pose.jointRightElbowRelative.x = rightER.x;
-  pose.jointRightElbowRelative.z = rightER.z;
-  
-  pose.jointRightHandRelative.x = rightHR.x;
-  pose.jointRightHandRelative.z = rightHR.z;
-  
-  
-}
 
 // draw the skeleton with the selected joints
 PVector evaluateSkeleton(int userId, int detectedPlayerCount)
@@ -1737,7 +1724,7 @@ PVector evaluateSkeleton(int userId, int detectedPlayerCount)
       if (detectedPlayerCount < PLAYER_COLORS.length) pg.stroke(PLAYER_COLORS[detectedPlayerCount].x,PLAYER_COLORS[detectedPlayerCount].y,PLAYER_COLORS[detectedPlayerCount].z,255);
     
       warning[detectedPlayerCount] = -1; 
- 
+
       pg.strokeWeight(5);
       pg.line(jointNeck2D.x,jointNeck2D.y, jointLeftShoulder2D.x,jointLeftShoulder2D.y);
       pg.line(jointLeftShoulder2D.x,jointLeftShoulder2D.y, jointLeftElbow2D.x,jointLeftElbow2D.y);
@@ -1745,7 +1732,6 @@ PVector evaluateSkeleton(int userId, int detectedPlayerCount)
       pg.line(jointNeck2D.x,jointNeck2D.y, jointRightShoulder2D.x,jointRightShoulder2D.y);
       pg.line(jointRightShoulder2D.x,jointRightShoulder2D.y, jointRightElbow2D.x,jointRightElbow2D.y);
       pg.line(jointRightElbow2D.x,jointRightElbow2D.y, jointRightHand2D.x,jointRightHand2D.y);
-
       
       textAlign(CENTER);
       textFont(fontA32, 32);
@@ -1816,12 +1802,10 @@ PVector evaluateSkeleton(int userId, int detectedPlayerCount)
     // ==== COPY ===
     
     // add new pose to ringbuffer
-    pose = normalizePose(pose);
-    if (ROTATE_PLAYER) normalizePoseRotation(pose);    
+    if (NORMALIZE_SIZE) pose = normalizeSize(pose);
+    if (ROTATE_PLAYER) pose = normalizeRotation(pose);    
     
     ringbuffer[detectedPlayerCount].fillBuffer( pose );
-    
- 
     
     return jointNeck3D;
 }
@@ -2017,8 +2001,8 @@ void loadData(int moveID) {
         move[moveID][j].jointRightHandRelative.z = data.readFloat();
 
         
-        if (NORMALIZE_POSE_ON_LOAD) move[moveID][j] = normalizePose( move[moveID][j] );
-        if (ROTATE_POSE_ON_LOAD) normalizePoseRotation( move[moveID][j]);
+        if (NORMALIZE_SIZE_ON_LOAD) move[moveID][j] = normalizeSize( move[moveID][j] );
+        if (NORMALIZE_ROTATION_ON_LOAD) move[moveID][j] = normalizeRotation( move[moveID][j]);
       
   } 
 }
