@@ -1206,7 +1206,9 @@ void updatePlayerHits() {
   for (int i=0; i < PLAYER_COUNT; i++) {
     if (vectorNullOrZero( localPlayerNecks[i] ) ) continue;
 
-    kinectToFieldScaled.mult(localPlayerNecks[i], neck);    
+    neck = localPlayerNecks[i];
+    //already transformed
+//    kinectToFieldScaled.mult(localPlayerNecks[i], neck);    
     int hv = isPlayerHit( neck ,true );
 
     if (hv == HIT_SUCCESS_VALUE) {
