@@ -127,6 +127,9 @@ static int PLAYER_MODUS_COUNT = 3;
 //PVector throwStartPos;
 //PVector throwEndPos;
 
+int localPointsSum = 0;
+int remotePointsSum = 0;
+
 
 static float HIT_DISTANCE = 0.6f; // 60cm normalized shoulder width
 static float FRIGHTENED_DISTANCE = 1.2f; // 
@@ -1015,7 +1018,8 @@ void setup()
 
     // Set the font and its size (in units of pixels)
     textFont(fontA32, 32);
- 
+    textMode(SCREEN);
+   
     //TODO: ui stuff
     if (IS_DEBUG_MODE)
     {
@@ -1129,6 +1133,7 @@ class Ball
 {
   PVector pos;
   PVector dir;
+  boolean isLocal;
 }
 
 ArrayList<Ball> balls = new ArrayList<Ball>();
@@ -1171,30 +1176,49 @@ void updateBalls()
 }
 
 void updatePlayerHits() {
+  // the transformed neck
+  PVector neck = new PVector();
+
+  // remote players
   for (int i=0; i < PLAYER_COUNT; i++) {
     if (vectorNullOrZero( remotePlayerNecks[i] ) ) continue;
-    int hv = isPlayerHit(remotePlayerNecks[i] );
+
+
+    otherKinectToFieldScaled.mult(remotePlayerNecks[i], neck);
+          
+    int hv = isPlayerHit(neck, false );
+
+    
     if (hv == HIT_SUCCESS_VALUE) {
       println("remote player "+i+" hit");
       remotePlayerHit[i] = HIT_COUNTER;
       remotePlayerHitCounter[i]++;
+      localPointsSum++;
     }
     else if (hv == HIT_FRIGHTENED_VALUE ) {
+      println("remote player "+i+" merly hit" +hv);
+  
       remotePlayerFrightened[i] = HIT_COUNTER;
     }
   }
   
+  // local players
   for (int i=0; i < PLAYER_COUNT; i++) {
     if (vectorNullOrZero( localPlayerNecks[i] ) ) continue;
-    int hv = isPlayerHit( localPlayerNecks[i] );
-    
+
+    kinectToFieldScaled.mult(localPlayerNecks[i], neck);    
+    int hv = isPlayerHit( neck ,true );
+
     if (hv == HIT_SUCCESS_VALUE) {
       println(" local player "+i+" hit ");
       localPlayerHit[i] = HIT_COUNTER;
       localPlayerHitCounter[i]++;
+      remotePointsSum++;
     }
     else if (hv == HIT_FRIGHTENED_VALUE ) {
-      localPlayerFrightened[i] = HIT_COUNTER;
+
+        println(" local player "+i+" merly hit "+hv);
+          localPlayerFrightened[i] = HIT_COUNTER;
     }
     
   }
@@ -1203,24 +1227,27 @@ void updatePlayerHits() {
 
 
 // checks all balls on remote players
-int isPlayerHit(PVector pos) {
+int isPlayerHit(PVector pos,boolean localBalls) {
   for (int i=0; i < balls.size(); ++i) {
-    float distance = PVector.dist(pos , balls.get(i).pos);
+    Ball b = balls.get(i);
     
+//    println(" check ball "+balls.get(i).isLocal + ": "+localBalls);
+    if (b.isLocal == localBalls) continue; // dont check local balls with local players
+//    println(" check ball  ok ");
+    float distance = PVector.dist(pos , b.pos);
+//    println(" ball "+i +" player pos "+pos + " ball pos "+b.pos+" dist "+distance);
     if (distance < HIT_DISTANCE) {
-      println("player hit ");
+//      println("player hit by ball is local"+localBalls);
       
       // remove ball
       balls.remove(i);
       --i;
       
-      //OnRemotePlayerHit(i);
       //TODO: if we had also an array of the local players...
       return HIT_SUCCESS_VALUE;
     } 
     if (distance < FRIGHTENED_DISTANCE) {
-      //OnRemotePlayerFrigthened(i);
-//      println("player frightened");
+//      println("player frightened : ball is local "+localBalls);
       return HIT_FRIGHTENED_VALUE;
     }
   }
@@ -1301,10 +1328,12 @@ if (false)
 
              pushMatrix();
              float aspect = (float)playas[0][0].width / (float)playas[0][0].height;
-             float heldHeight = neck.y + 0.3f;
+             // scale the yetie horziontally if player was hit
+             float hf = 1f- ((float)hit / 25f);
+             float heldHeight = (neck.y*hf) + 0.3f;
              float heldWidth = heldHeight * aspect;
-             translate(neck.x, hit, neck.z);
-             println(" hit "+ hit + " fr "+frightened);
+             translate(neck.x, 0, neck.z);
+             //println(" hit "+ hit + " fr "+frightened);
              //TODO rotate like tischfussballfigur is player is in hit state
              //rotate( (float) hit, (float)frightened,0f,0f);
              
@@ -1330,9 +1359,10 @@ boolean vectorNullOrZero(PVector vec)
   return (vec == null) || (vec.x == 0 && vec.y == 0 && vec.z == 0);
 }
 
-void createBall(PVector throwStartPos, PVector throwEndPos, PMatrix3D transform)
+void createBall(PVector throwStartPos, PVector throwEndPos, PMatrix3D transform,boolean isLocal)
 {
                   Ball ball = new Ball();
+                  ball.isLocal = isLocal;
                   PVector fieldThrowEndPos = new PVector();
                   transform.mult(throwEndPos, fieldThrowEndPos);
                   
@@ -1345,19 +1375,13 @@ void createBall(PVector throwStartPos, PVector throwEndPos, PMatrix3D transform)
                   PVector dir = PVector.sub(fieldThrowEndPos, fieldThrowStartPos);
                   dir.normalize();
                   dir.y = 0;
-                  dir.x *= 0.05f;
-                  dir.z *= 0.1f;
-                  
+                  dir.x *= 0.05f; // less horziontal sensivity
+                  //dir.z *= 0.1f; 
+                  // no speed info
+                  if (dir.z < 0) dir.z = -0.1f;
+                  else dir.z = 0.1f;
                                   
-                  //
-//                  dir.mult(0.1f);
-                  // less horziontal sensivity
-                  // as we have no speed information for the throw i set a default ball speed (AL)
-                  // its the bug with the directly right or left thrown balls
-                  // if the computed speed is too low, the horizontal value takes too much importance
-                  //dir.z *= 0.1f;
-                  // no ball flying backwards
-                  //if (dir.z > 0) dir.z = -dir.z;
+                                  
 
                   PVector notHit = new PVector();
                   notHit.x = dir.x;
@@ -1543,18 +1567,35 @@ void draw()
       pg.endDraw();
       return;
     }
-    
+   
     
     //we are in game mode
     background(bg); 
 
+
+    // draw player hits
+//     strokeWeight(0);
+    textFont(fontA32, 32);
+    fill(255,255,255,128);
+    rect(20,20,screenWidth -20,142);
+    fill(0,0,0,255);
+    textAlign(CENTER);
+    text("Local Hits "+ localPointsSum, screenWidth * 0.15f,40);
+    textAlign(CENTER);
+    text("Remote Hits "+ remotePointsSum, screenWidth * 0.65f, 40);
+  //   strokeWeight(0); 
+     
+     
     pg.beginDraw();
 
-    
+
       int  detectedPlayerCount = 0;
 
       drawGameField();
+
+   
     
+        
       // draw remote players ?!?
       // trigger ball on remote player throw detection / message
       for (int i = 0; i < remotePlayerNecks.length; ++i) {
@@ -1577,7 +1618,7 @@ void draw()
         // remote throw detection
         if (!vectorNullOrZero(remotePlayerActualHands[i]) &&
           !vectorNullOrZero(remotePlayerOldHands[i])) {
-          createBall(remotePlayerOldHands[i], remotePlayerActualHands[i], otherKinectToFieldScaled);
+          createBall(remotePlayerOldHands[i], remotePlayerActualHands[i], otherKinectToFieldScaled,false);
           remotePlayerActualHands[i] = null;
           remotePlayerOldHands[i] = null;
         }
@@ -1593,19 +1634,20 @@ void draw()
 //            println("old neck "+neck);
             kinectToFieldScaled.mult(neck, neck);
 //            println("new neck "+neck);
-               
+            
+            // save the transformed position   
             localPlayerNecks[detectedPlayerCount] = neck;
             //translate(neck.x * 0.001f, neck.y * 0.001f, -neck.z * 0.001f);
            
             // update player hit counters
-            if (localPlayerHit[i] > 0) {
-              localPlayerHit[i]--;
+            if (localPlayerHit[detectedPlayerCount] > 0) {
+              localPlayerHit[detectedPlayerCount]--;
             }
-            if (localPlayerFrightened[i] > 0) {
-              localPlayerFrightened[i]--;
+            if (localPlayerFrightened[detectedPlayerCount] > 0) {
+              localPlayerFrightened[detectedPlayerCount]--;
             }
             
-            drawPlayer(neck, true,localPlayerHit[i],localPlayerFrightened[i]);
+            drawPlayer(neck, true,localPlayerHit[detectedPlayerCount],localPlayerFrightened[detectedPlayerCount]);
             
             detectedPlayerCount++;
         }
@@ -1660,8 +1702,8 @@ void draw()
                    playerRightHandGestureDetected[p] = true;
                  }
 
-                 // virtually throw: add ball
-                 createBall(throwStartPos, throwEndPos, kinectToFieldScaled);           
+                 // virtually throw: add local ball
+                 createBall(throwStartPos, throwEndPos, kinectToFieldScaled,true);           
                                  
               }
             }
@@ -1723,12 +1765,17 @@ void draw()
     
       updateBalls();
       updatePlayerHits();    
-    pg.endDraw();
 
     // the matrix set in drawGameField()    
     popMatrix();
-}
 
+
+
+   
+    pg.endDraw();
+
+   
+}
 
 // draw the skeleton with the selected joints
 PVector evaluateSkeleton(int userId, int detectedPlayerCount)
