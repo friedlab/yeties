@@ -22,9 +22,9 @@ static boolean IS_DEBUG_MODE = false;
 static int CHECK_SKELETON_COUNT = 6;
 static final int PLAYER_COUNT = 3;
 static boolean NORMALIZE_SIZE = true;
-static boolean ROTATE_PLAYER = true;
+static boolean NORMALIZE_ROTATION = true;
 // MWO: something wrong in the loading routine of NORMALIZE_ROTATION_ON_LOAD (shows in DTW, but can't find error)
-static boolean NORMALIZE_ROTATION_ON_LOAD = false;
+static boolean NORMALIZE_ROTATION_ON_LOAD = true;
 static boolean NORMALIZE_SIZE_ON_LOAD = true;
 
 // ============================================================
@@ -98,7 +98,7 @@ HandPoseAbsolute[] actualHandPose = new HandPoseAbsolute[PLAYER_COUNT];
 HandPoseAbsolute[] oldHandPose = new HandPoseAbsolute[PLAYER_COUNT];
 
 // latenz
-int X = 10;
+int X = 5;
 // ==== COPY ===
 
 
@@ -415,9 +415,9 @@ class RingBuffer
 
     float mse = 0.0;
 
-    float weight_x = 0.5  * 0.15;
-    float weight_y = 0.75 * 0.15;
-    float weight_z = 1.0  * 0.15;
+    float weight_x = 0.5  * 0.5;
+    float weight_y = 0.75 * 0.5;
+    float weight_z = 1.0  * 0.5;
 
     mse += weight_left * sqrt( weight_x * pow((move[moveID][j].jointLeftShoulderRelative.x - poseArray[i].jointLeftShoulderRelative.x), 2) 
       + weight_y * pow((move[moveID][j].jointLeftShoulderRelative.y - poseArray[i].jointLeftShoulderRelative.y), 2)
@@ -569,12 +569,16 @@ class RingBuffer
             float value = 255-255*d[displayCost][n][(m + startOfBuffer) % N]/maximum;
             fill(value,0,0);
             rect(context.depthWidth() + n*400/M,m*400/M+90,400/M,400/M);
+
+            if (n < 0) n = 0;
+            if (m < 0) m = 0;
                         
             int tempN = n;
             if (P[displayCost][n][m] >= 0) tempN--;
             if (P[displayCost][n][m] <= 0) m--;
             n = tempN;
-            if (n < 0) n = 0;            
+            if (n < 0) n = 0;
+            if (m < 0) m = 0;            
         }
         
         fill(0,0,0);
@@ -661,213 +665,6 @@ class RingBuffer
     }
 }
 
-Pose normalizeSize(Pose p) {
-// size normalization
-    float scaleFactor = 1.0;
-    float normalShoulderWidth = 370*scaleFactor;
-    
-    float normalLeftUpperArmLength = 320*scaleFactor;
-    float normalRightUpperArmLength = 320*scaleFactor;
-    
-    float normalLeftLowerArmLength = 300*scaleFactor;
-    float normalRightLowerArmLength = 300*scaleFactor;
-// normalize shoulder width
-
-    PVector shoulderVector = new PVector();
-    
-    shoulderVector.x = p.jointLeftShoulderRelative.x - p.jointRightShoulderRelative.x;
-    shoulderVector.y = p.jointLeftShoulderRelative.y - p.jointRightShoulderRelative.y;
-    shoulderVector.z = p.jointLeftShoulderRelative.z - p.jointRightShoulderRelative.z;
-
-    float shoulderWidth = shoulderVector.mag();
-//    println("shoulderWidth: " + shoulderWidth);
-    
-    float shoulderNormalizationFactor = normalShoulderWidth/shoulderWidth;
-    
-    p.jointLeftShoulderRelative.x *= shoulderNormalizationFactor;
-    p.jointLeftShoulderRelative.y *= shoulderNormalizationFactor;
-    p.jointLeftShoulderRelative.z *= shoulderNormalizationFactor;
-  
-    p.jointLeftElbowRelative.x *= shoulderNormalizationFactor;
-    p.jointLeftElbowRelative.y *= shoulderNormalizationFactor;
-    p.jointLeftElbowRelative.z *= shoulderNormalizationFactor;
-  
-    p.jointLeftHandRelative.x *= shoulderNormalizationFactor;
-    p.jointLeftHandRelative.y *= shoulderNormalizationFactor;
-    p.jointLeftHandRelative.z *= shoulderNormalizationFactor;
-  
-    p.jointRightShoulderRelative.x *= shoulderNormalizationFactor;
-    p.jointRightShoulderRelative.y *= shoulderNormalizationFactor;
-    p.jointRightShoulderRelative.z *= shoulderNormalizationFactor;
-  
-    p.jointRightElbowRelative.x *= shoulderNormalizationFactor;
-    p.jointRightElbowRelative.y *= shoulderNormalizationFactor;
-    p.jointRightElbowRelative.z *= shoulderNormalizationFactor;
-  
-    p.jointRightHandRelative.x *= shoulderNormalizationFactor;
-    p.jointRightHandRelative.y *= shoulderNormalizationFactor;
-    p.jointRightHandRelative.z *= shoulderNormalizationFactor;
-    
-// normalize upper arm length
-    PVector leftUpperArmVector = new PVector();
-    PVector rightUpperArmVector = new PVector();
-
-    leftUpperArmVector.x = p.jointLeftElbowRelative.x - p.jointLeftShoulderRelative.x;
-    leftUpperArmVector.y = p.jointLeftElbowRelative.y - p.jointLeftShoulderRelative.y;
-    leftUpperArmVector.z = p.jointLeftElbowRelative.z - p.jointLeftShoulderRelative.z;
-
-    rightUpperArmVector.x = p.jointRightElbowRelative.x - p.jointRightShoulderRelative.x;
-    rightUpperArmVector.y = p.jointRightElbowRelative.y - p.jointRightShoulderRelative.y;
-    rightUpperArmVector.z = p.jointRightElbowRelative.z - p.jointRightShoulderRelative.z;
-    
-      
-//    println("left upper arm length: " + leftUpperArmVector.mag());
-//    println("right upper arm length: " + rightUpperArmVector.mag());
- 
-    
-    float leftUpperArmLength = leftUpperArmVector.mag();
-    float rightUpperArmLength = rightUpperArmVector.mag();
-    
-    float leftUpperArmNormalizationFactor = normalLeftUpperArmLength/leftUpperArmLength;
-    float rightUpperArmNormalizationFactor = normalRightUpperArmLength/rightUpperArmLength;
-    
-    PVector oldLeftElbow = new PVector(p.jointLeftElbowRelative.x, p.jointLeftElbowRelative.y, p.jointLeftElbowRelative.z);
-    PVector oldRightElbow = new PVector(p.jointRightElbowRelative.x, p.jointRightElbowRelative.y, p.jointRightElbowRelative.z);
-      
-    p.jointLeftElbowRelative.mult(leftUpperArmNormalizationFactor);
-    p.jointRightElbowRelative.mult(rightUpperArmNormalizationFactor);
-    
-    PVector leftHandMoveVector = new PVector(p.jointLeftElbowRelative.x, p.jointLeftElbowRelative.y, p.jointLeftElbowRelative.z);
-    leftHandMoveVector.sub(oldLeftElbow);
-    PVector rightHandMoveVector = new PVector(p.jointRightElbowRelative.x, p.jointRightElbowRelative.y, p.jointRightElbowRelative.z);
-    rightHandMoveVector.sub(oldRightElbow);
-    
-    p.jointLeftHandRelative.add(leftHandMoveVector);
-  
-    p.jointRightHandRelative.add(rightHandMoveVector);
-   
-// normalize lower arm length
-    PVector leftLowerArmVector = new PVector();
-    PVector rightLowerArmVector = new PVector();
-
-    leftLowerArmVector.x = p.jointLeftElbowRelative.x - p.jointLeftHandRelative.x;
-    leftLowerArmVector.y = p.jointLeftElbowRelative.y - p.jointLeftHandRelative.y;
-    leftLowerArmVector.z = p.jointLeftElbowRelative.z - p.jointLeftHandRelative.z;
-
-    rightLowerArmVector.x = p.jointRightElbowRelative.x - p.jointRightHandRelative.x;
-    rightLowerArmVector.y = p.jointRightElbowRelative.y - p.jointRightHandRelative.y;
-    rightLowerArmVector.z = p.jointRightElbowRelative.z - p.jointRightHandRelative.z;
-    
-//    println("left lower arm length: " + leftLowerArmVector.mag());
-//    println("right lower arm length: " + rightLowerArmVector.mag());
-    
-    float leftLowerArmLength = leftLowerArmVector.mag();
-    float rightLowerArmLength = rightLowerArmVector.mag();
-    
-    float leftLowerArmNormalizationFactor = normalLeftLowerArmLength/leftLowerArmLength;
-    float rightLowerArmNormalizationFactor = normalRightLowerArmLength/rightLowerArmLength;
-    
-    leftLowerArmVector.mult(leftLowerArmNormalizationFactor);
-    rightLowerArmVector.mult(rightLowerArmNormalizationFactor);
-    
-    PVector newLeftHandPosition = new PVector(p.jointLeftElbowRelative.x, p.jointLeftElbowRelative.y, p.jointLeftElbowRelative.z);   
-    PVector newRightHandPosition = new PVector(p.jointRightElbowRelative.x, p.jointRightElbowRelative.y, p.jointRightElbowRelative.z);   
-    
-    newLeftHandPosition.sub(leftLowerArmVector);
-    newRightHandPosition.sub(rightLowerArmVector);
-    
-    p.jointLeftHandRelative = newLeftHandPosition;
-    p.jointRightHandRelative = newRightHandPosition;
-    
-    return p;
-}
-
-// all the poses will be rotatet. need neck-relative position (as origin)
-Pose normalizeRotation(Pose pose) {
-
-  // get vector between shoulders and computer the normal in the middle of the [strecke]
-  // only 2d vector, as angle between only computes one angle (x,y component)
-  PVector leftToRight = new PVector();
-  leftToRight.x = pose.jointRightShoulderRelative.x - pose.jointLeftShoulderRelative.x;
-  leftToRight.y = pose.jointRightShoulderRelative.z - pose.jointLeftShoulderRelative.z;
-
-  // normalize
-  //leftToRight.normalize();
-  // the orientation in the view from the kinect sensor
-  PVector facingV = new PVector(1, 0); //use the normal to the z-direction (facing of the k.sensor) //0,1);
-  // 0 -> front face to sensor face
-  // 90 -> turned front to right
-  // -90 -> turned front to left
-  float fradians = PVector.angleBetween(leftToRight, facingV);
-  float angle = degrees( fradians );
-
-  if (leftToRight.y > 0){
-     //angle = -angle;
-     //fradians = -fradians;
-  }    
-  // TODO compute back-facing vector (test sign )
-  // negative x is with face to the kinect device,   
-//  println(" shoulders vektor "+leftToRight + " angle "+angle + " rads "+ fradians); 
-
-
-
-  // rotate all bones by this angle, so that the recognisable     
-  float fcos = cos(-fradians);
-  float fsin = sin(-fradians);
-/*
-  println(" left shoulder before " +   pose.jointLeftShoulderRelative.x + " : " +   pose.jointLeftShoulderRelative.z+ "; "+
-                                  pose.jointRightShoulderRelative.x    + " : " +   pose.jointRightShoulderRelative.z + "; ");
-                                  
-  */                                
-  PVector leftSR = new PVector();
-  leftSR.x = fcos *     pose.jointLeftShoulderRelative.x  - fsin *     pose.jointLeftShoulderRelative.z;
-  leftSR.z = fsin *     pose.jointLeftShoulderRelative.x  + fcos *     pose.jointLeftShoulderRelative.z;
-
-  PVector leftER = new PVector();
-  leftER.x = fcos * pose.jointLeftElbowRelative.x  - fsin * pose.jointLeftElbowRelative.z;
-  leftER.z = fsin * pose.jointLeftElbowRelative.x  + fcos * pose.jointLeftElbowRelative.z;
-
-  PVector leftHR = new PVector();
-  leftHR.x = fcos * pose.jointLeftHandRelative.x  - fsin * pose.jointLeftHandRelative.z;
-  leftHR.z = fsin * pose.jointLeftHandRelative.x  + fcos * pose.jointLeftHandRelative.z;
-
-  PVector rightSR = new PVector();
-  rightSR.x = fcos * pose.jointRightShoulderRelative.x  - fsin * pose.jointRightShoulderRelative.z;
-  rightSR.z = fsin * pose.jointRightShoulderRelative.x  + fcos * pose.jointRightShoulderRelative.z;
-
-  PVector rightER = new PVector();
-  rightER.x = fcos * pose.jointRightElbowRelative.x  - fsin * pose.jointRightElbowRelative.z;
-  rightER.z = fsin * pose.jointRightElbowRelative.x  + fcos * pose.jointRightElbowRelative.z;
-
-  PVector rightHR = new PVector();
-  rightHR.x = fcos * pose.jointRightHandRelative.x  - fsin * pose.jointRightHandRelative.z;
-  rightHR.z = fsin * pose.jointRightHandRelative.x  + fcos * pose.jointRightHandRelative.z;
-
-/*
-  println(" left shoulder after " +  leftSR.x + " : " +   leftSR.z+ "; "+
-                                  rightSR.x    + " : " +   rightSR.z + "; ");
-*/
-  pose.jointLeftShoulderRelative.x = leftSR.x;
-  pose.jointLeftShoulderRelative.z = leftSR.z;
-  
-  pose.jointLeftElbowRelative.x = leftER.x;
-  pose.jointLeftElbowRelative.z = leftER.z;
-
-  pose.jointLeftHandRelative.x = leftHR.x;
-  pose.jointLeftHandRelative.z = leftHR.z;
-  
-  pose.jointRightShoulderRelative.x = rightSR.x;
-  pose.jointRightShoulderRelative.z = rightSR.z;
-  
-  pose.jointRightElbowRelative.x = rightER.x;
-  pose.jointRightElbowRelative.z = rightER.z;
-  
-  pose.jointRightHandRelative.x = rightHR.x;
-  pose.jointRightHandRelative.z = rightHR.z;
-  
-  return pose;  
-}
-
 
 /* =====================================================================================
     setup
@@ -879,7 +676,8 @@ void setup()
   
     int portToListenTo = 7000; 
     int portToSendTo = 7000;
-    String ipAddressToSendTo = "localhost";
+    // String ipAddressToSendTo = "localhost";
+    String ipAddressToSendTo = "10.1.0.48";
 
     oscP5 = new OscP5(this,portToListenTo);
     myRemoteLocation = new NetAddress(ipAddressToSendTo, portToSendTo);  
@@ -1938,7 +1736,7 @@ PVector evaluateSkeleton(int userId, int detectedPlayerCount)
     
     // add new pose to ringbuffer
     if (NORMALIZE_SIZE) pose = normalizeSize(pose);
-    if (ROTATE_PLAYER) pose = normalizeRotation(pose);    
+    if (NORMALIZE_ROTATION) pose = normalizeRotation(pose);    
     
     ringbuffer[detectedPlayerCount].fillBuffer( pose );
     
