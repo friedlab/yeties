@@ -98,7 +98,7 @@ HandPoseAbsolute[] actualHandPose = new HandPoseAbsolute[PLAYER_COUNT];
 HandPoseAbsolute[] oldHandPose = new HandPoseAbsolute[PLAYER_COUNT];
 
 // latenz
-int X = 5;
+int X = 8;
 // ==== COPY ===
 
 
@@ -260,11 +260,13 @@ class RingBufferForThrowAction{
       
       // store the new hand pose in the ringbuffer 
       poseArray[actualPointer].leftHandAbsolute.x = aNewPose.leftHandAbsolute.x;
-      poseArray[actualPointer].leftHandAbsolute.y = aNewPose.leftHandAbsolute.y;
+      // poseArray[actualPointer].leftHandAbsolute.y = aNewPose.leftHandAbsolute.y;
+      poseArray[actualPointer].leftHandAbsolute.y = 0.0;
       poseArray[actualPointer].leftHandAbsolute.z = aNewPose.leftHandAbsolute.z;
       
       poseArray[actualPointer].rightHandAbsolute.x = aNewPose.rightHandAbsolute.x;
-      poseArray[actualPointer].rightHandAbsolute.y = aNewPose.rightHandAbsolute.y;
+      // poseArray[actualPointer].rightHandAbsolute.y = aNewPose.rightHandAbsolute.y;
+      poseArray[actualPointer].rightHandAbsolute.y = 0.0;
       poseArray[actualPointer].rightHandAbsolute.z = aNewPose.rightHandAbsolute.z;
   }
   
@@ -415,9 +417,9 @@ class RingBuffer
 
     float mse = 0.0;
 
-    float weight_x = 0.5  * 0.5;
-    float weight_y = 0.75 * 0.5;
-    float weight_z = 1.0  * 0.5;
+    float weight_x = 0.5;
+    float weight_y = 0.5;
+    float weight_z = 1.5;
 
     mse += weight_left * sqrt( weight_x * pow((move[moveID][j].jointLeftShoulderRelative.x - poseArray[i].jointLeftShoulderRelative.x), 2) 
       + weight_y * pow((move[moveID][j].jointLeftShoulderRelative.y - poseArray[i].jointLeftShoulderRelative.y), 2)
@@ -676,8 +678,8 @@ void setup()
   
     int portToListenTo = 7000; 
     int portToSendTo = 7000;
-    // String ipAddressToSendTo = "localhost";
-    String ipAddressToSendTo = "10.1.0.48";
+    String ipAddressToSendTo = "localhost";
+    // String ipAddressToSendTo = "10.1.0.48";
 
     oscP5 = new OscP5(this,portToListenTo);
     myRemoteLocation = new NetAddress(ipAddressToSendTo, portToSendTo);  
@@ -889,19 +891,22 @@ void oscEvent(OscMessage updateMessage) {
      
       remotePlayerNecks[i] = new PVector();
       remotePlayerNecks[i].x = updateMessage.get(i*9+0).floatValue();
-      remotePlayerNecks[i].y = updateMessage.get(i*9+1).floatValue();
-      remotePlayerNecks[i].z = updateMessage.get(i*9+2).floatValue();
+      // remotePlayerNecks[i].y = updateMessage.get(i*9+1).floatValue();
+      remotePlayerNecks[i].y = 0.0;
+      remotePlayerNecks[i].z = 0.5*updateMessage.get(i*9+2).floatValue();
 
 
       remotePlayerOldHands[i] = new PVector();
       remotePlayerOldHands[i].x = updateMessage.get(i*9+3).floatValue();
-      remotePlayerOldHands[i].y = updateMessage.get(i*9+4).floatValue();
+      // remotePlayerOldHands[i].y = updateMessage.get(i*9+4).floatValue();
+      remotePlayerOldHands[i].y = 0.0;
       remotePlayerOldHands[i].z = updateMessage.get(i*9+5).floatValue();
 
 
       remotePlayerActualHands[i] = new PVector();
       remotePlayerActualHands[i].x = updateMessage.get(i*9+6).floatValue();
-      remotePlayerActualHands[i].y = updateMessage.get(i*9+7).floatValue();
+      // remotePlayerActualHands[i].y = updateMessage.get(i*9+7).floatValue();
+      remotePlayerActualHands[i].y = 0.0;
       remotePlayerActualHands[i].z = updateMessage.get(i*9+8).floatValue();
      
    }
@@ -1174,7 +1179,7 @@ void createBall(PVector throwStartPos, PVector throwEndPos, PMatrix3D transform,
                          
                   PVector dir = PVector.sub(fieldThrowEndPos, fieldThrowStartPos);
                   dir.normalize();
-                  dir.y = 0;
+                  dir.y = -0.01;
                   dir.x *= 0.05f; // less horziontal sensivity
                   //dir.z *= 0.1f; 
                   // no speed info
@@ -1380,9 +1385,9 @@ void draw()
     rect(20,20,screenWidth -20,142);
     fill(0,0,0,255);
     textAlign(CENTER);
-    text("Local Hits "+ localPointsSum, screenWidth * 0.15f,40);
+    text("Local Hits "+ localPointsSum, 1170 * 0.15f,40);
     textAlign(CENTER);
-    text("Remote Hits "+ remotePointsSum, screenWidth * 0.65f, 40);
+    text("Remote Hits "+ remotePointsSum, 1170 * 0.85f, 40);
   //   strokeWeight(0); 
      
      
@@ -1432,6 +1437,7 @@ void draw()
             PVector neck = evaluateSkeleton(i,detectedPlayerCount);
 
 //            println("old neck "+neck);
+              neck.y = 150.0;
             kinectToFieldScaled.mult(neck, neck);
 //            println("new neck "+neck);
             
@@ -1532,10 +1538,12 @@ void draw()
           if(playerLeftHandGestureDetected[k]) {
             playerActualHands[k] = ringbufferHand[k].getTheActualPose().leftHandAbsolute;
             playerOldHands[k] = ringbufferHand[k].getTheOlderPose().leftHandAbsolute;
+            playerOldHands[k].y = -10.0;
             playerLeftHandGestureDetected[k] = false;
           } else if(playerRightHandGestureDetected[k]) {
             playerActualHands[k] = ringbufferHand[k].getTheActualPose().rightHandAbsolute;
             playerOldHands[k] = ringbufferHand[k].getTheOlderPose().rightHandAbsolute;
+            playerOldHands[k].y = -10.0;            
             playerRightHandGestureDetected[k] = false;
           } else {
             playerActualHands[k] = new PVector(0, 0, 0);
@@ -1770,7 +1778,7 @@ void onNewUser(int userId)
 void onLostUser(int userId)
 {
     println("onLostUser - userId: " + userId);
-    context.stopTrackingSkeleton(userId);
+    // context.stopTrackingSkeleton(userId);
 }
 
 void onStartCalibration(int userId)
