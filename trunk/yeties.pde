@@ -7,8 +7,9 @@
          Thomas Schenker,
 	 Alexander Liebrich,
 	 Hoang Anh Le
+         Jan Novacek
 *        and others (need_to_be_added)
-* date:  04/12/2011 (m/d/y)
+* date:  31/01/2012 (m/d/y)
 * ver:   0.1
 * ----------------------------------------------------------------------------
 */
@@ -29,13 +30,14 @@ static boolean NORMALIZE_SIZE_ON_LOAD = true;
 
 // ============================================================
 
-// import fullscreen.*; 
-// FullScreen fs; 
+// import fullscreen.*;
+// FullScreen fs;
 
 import SimpleOpenNI.*;
 import oscP5.*;
 import netP5.*;
 // import processing.opengl.*;
+import ddf.minim.*;
 
 SimpleOpenNI context;
 OscP5 oscP5;
@@ -50,7 +52,7 @@ PFont fontA32;
 PFont fontA12;
 PImage[] foto;
 PImage[][] warnings;
-PImage shapeOfUser;  
+PImage shapeOfUser;
 PImage kineticspace;
 
 boolean switchDisplay = false;
@@ -151,6 +153,11 @@ int remotePlayerFrightened[] = new int[PLAYER_COUNT];
 int localPlayerHitCounter[] = new int[PLAYER_COUNT];
 int remotePlayerHitCounter[] = new int[PLAYER_COUNT];
 
+////////////////////////////////////
+// audio
+
+Minim minim;
+HashMap<String, AudioPlayer> players;
 
 ////////////////////////////////////
 // game ui
@@ -682,8 +689,15 @@ void setup()
     // String ipAddressToSendTo = "10.1.0.48";
 
     oscP5 = new OscP5(this,portToListenTo);
-    myRemoteLocation = new NetAddress(ipAddressToSendTo, portToSendTo);  
-
+    myRemoteLocation = new NetAddress(ipAddressToSendTo, portToSendTo); 
+    
+    // Audio player and initial file for playing
+    minim = new Minim(this);
+    players = new HashMap<String, AudioPlayer>();
+    players.put("leftHand", minim.loadFile("leftHand.wav", 2048));
+    players.put("rightHand", minim.loadFile("rightHand.mp3", 2048));
+    players.put("boom", minim.loadFile("boom.wav", 2048));
+    
     //Q: are there M gestures with N pose-frames??
     grid = new Pose[M][N];
     for (int i = 0; i < M; i++) {
@@ -1019,6 +1033,8 @@ void updatePlayerHits() {
       localPlayerHit[i] = HIT_COUNTER;
       localPlayerHitCounter[i]++;
       remotePointsSum++;
+      
+      players.get("boom").play();
     }
     else if (hv == HIT_FRIGHTENED_VALUE ) {
 
@@ -1478,7 +1494,8 @@ void draw()
         playerRightHandGestureDetected[k] = false;
       }  
         
-          
+      
+      
       for (int p = 0; p<detectedPlayerCount; p++) {
         if (localPlayerThrowCounter[p] < SUPPRESS_THROW) {
           //println("throw suppressed for player "+p+" c "+localPlayerThrowCounter[p]);
@@ -1504,8 +1521,10 @@ void draw()
                  // geht davon aus dass die gesten für die linke hand auf 0-4 und die gesten für die rechte hand auf 5-9 liegen
                  if(i < 5) {
                    playerLeftHandGestureDetected[p] = true;
+                   players.get("leftHand").play();
                  } else {
                    playerRightHandGestureDetected[p] = true;
+                   players.get("rightHand").play();
                  }
 
                  // virtually throw: add local ball
@@ -1576,13 +1595,16 @@ void draw()
 
     // the matrix set in drawGameField()    
     popMatrix();
-
-
-
-   
+    
     pg.endDraw();
+}
 
-   
+void stop()
+{
+    for(String k : players.keySet()) {
+      players.get(k).close();
+    }
+    minim.stop();
 }
 
 // draw the skeleton with the selected joints
@@ -2058,4 +2080,3 @@ void keyPressed()
   }
   
 }
-
