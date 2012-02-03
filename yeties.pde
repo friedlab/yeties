@@ -7,7 +7,6 @@
          Thomas Schenker,
 	 Alexander Liebrich,
 	 Hoang Anh Le
-         Jan Novacek
 *        and others (need_to_be_added)
 * date:  31/01/2012 (m/d/y)
 * ver:   0.1
