@@ -693,9 +693,9 @@ void setup()
     // Audio player and initial file for playing
     minim = new Minim(this);
     players = new HashMap<String, AudioPlayer>();
-    players.put("leftHand", minim.loadFile("leftHand.wav", 2048));
-    players.put("rightHand", minim.loadFile("rightHand.mp3", 2048));
     players.put("boom", minim.loadFile("boom.wav", 2048));
+    players.put("leftHand", minim.loadFile("leftHand.mp3", 2048));
+    players.put("rightHand", minim.loadFile("rightHand.mp3", 2048));
     
     //Q: are there M gestures with N pose-frames??
     grid = new Pose[M][N];
